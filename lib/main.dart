@@ -120,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<double> niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
 
   // --- VALORES DOS CANAIS MANUAIS ---
+  int canalManualSelecionado = 1; // Canal sendo editado no momento (1 a 4)
   List<double> brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
   List<double> velocidadesCanaisManuais = [100.0, 100.0, 100.0, 100.0];
 
@@ -547,21 +548,49 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("CONTROLE MANUAL INDEPENDENTE", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 16),
-                  ...List.generate(4, (index) {
-                    return Column(
-                      children: [
-                        _buildSliderRow("BRILHO CANAL ${index + 1}", brilhoCanaisManuais[index], (val) {
-                          setState(() => brilhoCanaisManuais[index] = val);
-                        }, "SET_CH${index + 1}"),
-                        _buildSliderRow("VELOC. CANAL ${index + 1}", velocidadesCanaisManuais[index], (val) {
-                          setState(() => velocidadesCanaisManuais[index] = val);
-                        }, "SET_VCH${index + 1}", icon: Icons.speed),
-                        if (index < 3) Divider(color: Colors.white.withOpacity(0.05), height: 20),
-                      ],
-                    );
-                  }),
+                  const Text("SELECIONE O CANAL", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: List.generate(4, (index) {
+                      final int canal = index + 1;
+                      final bool selecionado = canalManualSelecionado == canal;
+                      return Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: index < 3 ? 8 : 0),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: selecionado ? Colors.amber : const Color(0xFF2E2E2E),
+                              foregroundColor: selecionado ? Colors.black : Colors.white70,
+                              padding: EdgeInsets.zero,
+                              elevation: selecionado ? 4 : 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () => setState(() => canalManualSelecionado = canal),
+                            child: Text("CH$canal", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16.0),
+                    child: Divider(color: Colors.white10),
+                  ),
+                  _buildSliderRow(
+                    "BRILHO DO CANAL $canalManualSelecionado",
+                    brilhoCanaisManuais[canalManualSelecionado - 1],
+                    (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val),
+                    "SET_CH$canalManualSelecionado"
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSliderRow(
+                    "VELOCIDADE DO CANAL $canalManualSelecionado",
+                    velocidadesCanaisManuais[canalManualSelecionado - 1],
+                    (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val),
+                    "SET_VCH$canalManualSelecionado",
+                    icon: Icons.speed
+                  ),
                 ],
               ),
             ),
@@ -572,8 +601,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildSliderCard("VELOCIDADE (STROBO / EFEITOS)", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
           const SizedBox(height: 8),
           _buildSliderCard("BRILHO GERAL", brilhoGeral, (val) => setState(() => brilhoGeral = val), "SET_DIM"),
-        ] else ...[
-          _buildSliderCard("VELOCIDADE DA OSCILAÇÃO", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
         ],
       ],
     );
