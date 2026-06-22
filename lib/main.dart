@@ -736,20 +736,16 @@ class LedGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final int totalPlacas = gridSize * gridSize;
-    final double spacing = 6.0;
+    final double spacing = 8.0;
 
     final double cellWidth = (size.width - (spacing * (gridSize - 1))) / gridSize;
     final double cellHeight = (size.height - (spacing * (gridSize - 1))) / gridSize;
 
     final Color corApagado = Colors.grey.shade900;
 
-    // Cores fiéis à imagem (Branco Frio e Branco Quente/Âmbar)
-    const Color corBrancoFrio = Color(0xFFE0E8FF);
-    const Color corBrancoQuente = Color(0xFFFFE3A3);
-
-    const int pixelsPerSide = 2;
-    final double pixelWidth = cellWidth / pixelsPerSide;
-    final double pixelHeight = cellHeight / pixelsPerSide;
+    // Cores das lâmpadas (Frio e Quente)
+    const Color corFrio = Color(0xFFE0E8FF);
+    const Color corQuente = Color(0xFFFFE3A3);
 
     for (int i = 0; i < totalPlacas; i++) {
       int rowPlaca = i ~/ gridSize;
@@ -758,51 +754,47 @@ class LedGridPainter extends CustomPainter {
       double xPlaca = colPlaca * (cellWidth + spacing);
       double yPlaca = rowPlaca * (cellHeight + spacing);
 
-      // Determina os canais base da placa (Par: 1/2, Ímpar: 3/4)
-      int ch1, ch2;
+      // Cada placa tem 2 canais (lâmpadas internas)
+      // Pares: CH1 e CH2 | Ímpares: CH3 e CH4
+      int chFrio, chQuente;
       if (i % 2 == 0) {
-        ch1 = 0; // CH1 -> Frio
-        ch2 = 1; // CH2 -> Quente
+        chFrio = 0;   // CH1
+        chQuente = 1; // CH2
       } else {
-        ch1 = 2; // CH3 -> Frio
-        ch2 = 3; // CH4 -> Quente
+        chFrio = 2;   // CH3
+        chQuente = 3; // CH4
       }
 
+      double nivelFrio = (niveisCanais[chFrio] / 100.0).clamp(0.0, 1.0);
+      double nivelQuente = (niveisCanais[chQuente] / 100.0).clamp(0.0, 1.0);
+
       final Rect rectPlaca = Rect.fromLTWH(xPlaca, yPlaca, cellWidth, cellHeight);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rectPlaca, const Radius.circular(4)),
-        Paint()..color = Colors.black,
-      );
+      final RRect rrectPlaca = RRect.fromRectAndRadius(rectPlaca, const Radius.circular(8));
 
-      // Continuidade do xadrez global
-      bool inverterPlaca = (rowPlaca + colPlaca) % 2 != 0;
+      // Se ambas as lâmpadas estiverem apagadas, desenha placa escura
+      if (nivelFrio == 0 && nivelQuente == 0) {
+        canvas.drawRRect(rrectPlaca, Paint()..color = corApagado);
+      } else {
+        // COR RESULTANTE: Mistura linear das duas lâmpadas internas
+        // r = (r1 * v1 + r2 * v2) / max(v1+v2, 1) ... simplificado:
+        double totalNivel = nivelFrio + nivelQuente;
 
-      for (int py = 0; py < pixelsPerSide; py++) {
-        for (int px = 0; px < pixelsPerSide; px++) {
-          bool isPixelA = (px + py) % 2 == 0;
-          if (inverterPlaca) isPixelA = !isPixelA;
+        int red = ((corFrio.red * nivelFrio + corQuente.red * nivelQuente) / totalNivel).round();
+        int green = ((corFrio.green * nivelFrio + corQuente.green * nivelQuente) / totalNivel).round();
+        int blue = ((corFrio.blue * nivelFrio + corQuente.blue * nivelQuente) / totalNivel).round();
+        double opacity = (totalNivel / 1.0).clamp(0.2, 1.0);
 
-          int canalIdx = isPixelA ? ch1 : ch2;
-          Color corBase = isPixelA ? corBrancoFrio : corBrancoQuente;
-          double nivel = niveisCanais[canalIdx] / 100.0;
+        Color corFinal = Color.fromARGB(255, red, green, blue).withOpacity(opacity);
 
-          double xPixel = xPlaca + (px * pixelWidth);
-          double yPixel = yPlaca + (py * pixelHeight);
+        // Desenha a placa com a cor misturada (análise visual de 2 lâmpadas em 1 espaço)
+        final Paint platePaint = Paint()..color = corFinal;
+        canvas.drawRRect(rrectPlaca, platePaint);
 
-          final Rect rectPixel = Rect.fromLTWH(xPixel + 1, yPixel + 1, pixelWidth - 2, pixelHeight - 2);
-
-          if (nivel > 0) {
-            final Paint pixelPaint = Paint()..color = corBase.withOpacity(nivel.clamp(0.1, 1.0));
-            canvas.drawRect(rectPixel, pixelPaint);
-
-            final Paint glow = Paint()
-              ..color = corBase.withOpacity(nivel * 0.3)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-            canvas.drawRect(rectPixel.inflate(1), glow);
-          } else {
-            canvas.drawRect(rectPixel, Paint()..color = corApagado);
-          }
-        }
+        // Efeito de brilho externo (Glow)
+        final Paint glowPaint = Paint()
+          ..color = corFinal.withOpacity(opacity * 0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+        canvas.drawRRect(rrectPlaca, glowPaint);
       }
     }
   }
