@@ -121,6 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- VALORES DOS CANAIS MANUAIS ---
   List<double> brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
+  List<double> velocidadesCanaisManuais = [100.0, 100.0, 100.0, 100.0];
 
   int get totalPlacas => tamanhoGrade * tamanhoGrade;
   int get totalCanais => 4;
@@ -136,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       executandoEfeito = false;
       niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
       brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
+      velocidadesCanaisManuais = [100.0, 100.0, 100.0, 100.0];
     });
   }
 
@@ -548,9 +550,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Text("CONTROLE MANUAL INDEPENDENTE", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
                   const SizedBox(height: 16),
                   ...List.generate(4, (index) {
-                    return _buildSliderRow("CANAL ${index + 1}", brilhoCanaisManuais[index], (val) {
-                      setState(() => brilhoCanaisManuais[index] = val);
-                    }, "SET_CH${index + 1}");
+                    return Column(
+                      children: [
+                        _buildSliderRow("BRILHO CANAL ${index + 1}", brilhoCanaisManuais[index], (val) {
+                          setState(() => brilhoCanaisManuais[index] = val);
+                        }, "SET_CH${index + 1}"),
+                        _buildSliderRow("VELOC. CANAL ${index + 1}", velocidadesCanaisManuais[index], (val) {
+                          setState(() => velocidadesCanaisManuais[index] = val);
+                        }, "SET_VCH${index + 1}", icon: Icons.speed),
+                        if (index < 3) const Divider(color: Colors.white05, height: 20),
+                      ],
+                    );
                   }),
                 ],
               ),
@@ -569,7 +579,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSliderRow(String label, double valor, Function(double) onCh, String cmd) {
+  Widget _buildSliderRow(String label, double valor, Function(double) onCh, String cmd, {IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Column(
@@ -577,7 +587,15 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              Row(
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 12, color: Colors.white38),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                ],
+              ),
               Text("${valor.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
             ],
           ),

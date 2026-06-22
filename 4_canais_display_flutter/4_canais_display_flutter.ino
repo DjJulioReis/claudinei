@@ -68,6 +68,7 @@ int enderecoDMX = 1;
 int linhaSelecionada = 0;
 int canalSelecionado = 0;
 int brilhoCanais[4] = { 255, 255, 255, 255 };
+int velocidadesCanais[4] = { 100, 100, 100, 100 };
 int niveisAtuais[4] = { 0, 0, 0, 0 };
 
 const char* nomesEfeitos[] = { "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
@@ -152,6 +153,10 @@ void setup() {
   brilhoCanais[1] = preferences.getInt("ch2", 255);
   brilhoCanais[2] = preferences.getInt("ch3", 255);
   brilhoCanais[3] = preferences.getInt("ch4", 255);
+  velocidadesCanais[0] = preferences.getInt("vch1", 100);
+  velocidadesCanais[1] = preferences.getInt("vch2", 100);
+  velocidadesCanais[2] = preferences.getInt("vch3", 100);
+  velocidadesCanais[3] = preferences.getInt("vch4", 100);
 
   // --- CONFIGURAÇÃO DA UART NATIVA (DMX512: 250kbps, 8N2) ---
   uart_config_t uart_config = {
@@ -216,6 +221,10 @@ void loop() {
           brilhoCanais[1] = preferences.getInt("ch2", 255);
           brilhoCanais[2] = preferences.getInt("ch3", 255);
           brilhoCanais[3] = preferences.getInt("ch4", 255);
+          velocidadesCanais[0] = preferences.getInt("vch1", 100);
+          velocidadesCanais[1] = preferences.getInt("vch2", 100);
+          velocidadesCanais[2] = preferences.getInt("vch3", 100);
+          velocidadesCanais[3] = preferences.getInt("vch4", 100);
           preferences.end();
         }
 
@@ -460,39 +469,29 @@ void executarEfeitos() {
 
   // --- MODO MANUAL: PISCADA INDEPENDENTE DINÂMICA ---
   if (modoAtual == 0) {
-    if (velocidad >= 100) {
-      // Velocidade máxima = canais estáticos (comportamento padrão)
-      writeChannel(0, (brilhoCanais[0] * brilhoGeral) / 255);
-      writeChannel(1, (brilhoCanais[1] * brilhoGeral) / 255);
-      writeChannel(2, (brilhoCanais[2] * brilhoGeral) / 255);
-      writeChannel(3, (brilhoCanais[3] * brilhoGeral) / 255);
-    } 
-    else {
-      static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
-      static boolean estadosCanais[4] = {false, false, false, false};
-      int delaysIndividuais[4];
+    static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
+    static boolean estadosCanais[4] = {false, false, false, false};
+    int delaysIndividuais[4];
 
-      for (int i = 0; i < 4; i++) {
-        if (brilhoCanais[i] > 0) {
-          float fatorBrilho = map(brilhoCanais[i], 1, 255, 4, 20) / 10.0;
-          delaysIndividuais[i] = delayEfeito * fatorBrilho;
-          if (delaysIndividuais[i] < 15) delaysIndividuais[i] = 15; 
-        } else {
-          delaysIndividuais[i] = delayEfeito;
-        }
-      }
+    for (int i = 0; i < 4; i++) {
+      if (velocidadesCanais[i] >= 100) {
+        // Velocidade máxima para este canal = estático
+        delaysIndividuais[i] = 0;
+        estadosCanais[i] = true;
+      } else {
+        // Mapeia velocidade (0-99) para delay (800ms a 40ms)
+        delaysIndividuais[i] = map(velocidadesCanais[i], 0, 99, 800, 40);
 
-      for (int i = 0; i < 4; i++) {
+        // Mantém a influência do brilho na velocidade se desejar, ou remove para controle puro
+        // Aqui removemos para o controle ser 100% manual via slider de velocidade
         if (tempoAtual - ultimosTempos[i] >= (unsigned long)delaysIndividuais[i]) {
           ultimosTempos[i] = tempoAtual;
           estadosCanais[i] = !estadosCanais[i];
         }
       }
 
-      writeChannel(0, estadosCanais[0] ? (brilhoCanais[0] * brilhoGeral) / 255 : 0);
-      writeChannel(1, estadosCanais[1] ? (brilhoCanais[1] * brilhoGeral) / 255 : 0);
-      writeChannel(2, estadosCanais[2] ? (brilhoCanais[2] * brilhoGeral) / 255 : 0);
-      writeChannel(3, estadosCanais[3] ? (brilhoCanais[3] * brilhoGeral) / 255 : 0);
+      int nivelBase = (brilhoCanais[i] * brilhoGeral) / 255;
+      writeChannel(i, estadosCanais[i] ? nivelBase : 0);
     }
     enviarNiveisBT();
     return;
@@ -720,6 +719,14 @@ void processarComandoApp(String pacote) {
     brilhoCanais[2] = map(valor.toInt(), 0, 100, 0, 255);
   } else if (comando == "SET_CH4") {
     brilhoCanais[3] = map(valor.toInt(), 0, 100, 0, 255);
+  } else if (comando == "SET_VCH1") {
+    velocidadesCanais[0] = valor.toInt();
+  } else if (comando == "SET_VCH2") {
+    velocidadesCanais[1] = valor.toInt();
+  } else if (comando == "SET_VCH3") {
+    velocidadesCanais[2] = valor.toInt();
+  } else if (comando == "SET_VCH4") {
+    velocidadesCanais[3] = valor.toInt();
   }
 
   // --- CONTROLE DE DISPARO DA PISTA VIA APP ---
@@ -763,6 +770,10 @@ void salvarConfiguracao() {
   preferences.putInt("ch2", brilhoCanais[1]);
   preferences.putInt("ch3", brilhoCanais[2]);
   preferences.putInt("ch4", brilhoCanais[3]);
+  preferences.putInt("vch1", velocidadesCanais[0]);
+  preferences.putInt("vch2", velocidadesCanais[1]);
+  preferences.putInt("vch3", velocidadesCanais[2]);
+  preferences.putInt("vch4", velocidadesCanais[3]);
 }
 
 void imprimeNumero(int num) {
