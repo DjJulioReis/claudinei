@@ -206,6 +206,19 @@ void loop() {
 
         sistemaEmModoDMX = !sistemaEmModoDMX;
 
+        // Ao sair do modo DMX, restaura configurações salvas para evitar interferência
+        if (!sistemaEmModoDMX) {
+          preferences.begin("mileto_cfg", true);
+          modoAtual = preferences.getInt("modo", 0);
+          velocidad = preferences.getInt("vel", 100);
+          brilhoGeral = preferences.getInt("dim", 255);
+          brilhoCanais[0] = preferences.getInt("ch1", 255);
+          brilhoCanais[1] = preferences.getInt("ch2", 255);
+          brilhoCanais[2] = preferences.getInt("ch3", 255);
+          brilhoCanais[3] = preferences.getInt("ch4", 255);
+          preferences.end();
+        }
+
         if (dispositivoConectado) {
           SerialBT.print("CHAVE_MODO:");
           SerialBT.println(sistemaEmModoDMX ? "DMX" : "RF");
@@ -449,10 +462,10 @@ void executarEfeitos() {
   if (modoAtual == 0) {
     if (velocidad >= 100) {
       // Velocidade máxima = canais estáticos (comportamento padrão)
-      writeChannel(0, brilhoCanais[0]);
-      writeChannel(1, brilhoCanais[1]);
-      writeChannel(2, brilhoCanais[2]);
-      writeChannel(3, brilhoCanais[3]);
+      writeChannel(0, (brilhoCanais[0] * brilhoGeral) / 255);
+      writeChannel(1, (brilhoCanais[1] * brilhoGeral) / 255);
+      writeChannel(2, (brilhoCanais[2] * brilhoGeral) / 255);
+      writeChannel(3, (brilhoCanais[3] * brilhoGeral) / 255);
     } 
     else {
       static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
@@ -476,10 +489,10 @@ void executarEfeitos() {
         }
       }
 
-      writeChannel(0, estadosCanais[0] ? brilhoCanais[0] : 0);
-      writeChannel(1, estadosCanais[1] ? brilhoCanais[1] : 0);
-      writeChannel(2, estadosCanais[2] ? brilhoCanais[2] : 0);
-      writeChannel(3, estadosCanais[3] ? brilhoCanais[3] : 0);
+      writeChannel(0, estadosCanais[0] ? (brilhoCanais[0] * brilhoGeral) / 255 : 0);
+      writeChannel(1, estadosCanais[1] ? (brilhoCanais[1] * brilhoGeral) / 255 : 0);
+      writeChannel(2, estadosCanais[2] ? (brilhoCanais[2] * brilhoGeral) / 255 : 0);
+      writeChannel(3, estadosCanais[3] ? (brilhoCanais[3] * brilhoGeral) / 255 : 0);
     }
     enviarNiveisBT();
     return;
@@ -599,13 +612,40 @@ void processarMesaDMX() {
 
                 velocidad = map(dmxCH5, 0, 255, 0, 100);
 
-                if (modoAtual == 0) {
+                // MAPEAMENTO DMX FINAL (CORRIGIDO):
+                // CH1: Dimmer Saída 1
+                // CH2: Dimmer Saída 2
+                // CH3: Dimmer Saída 3
+                // CH4: Dimmer Saída 4
+                // CH5: Velocidade
+                // CH6: Dimmer Geral + Seletor de Efeitos
+
+                // Ranges do CH6:
+                // 000 - 050: MANUAL (CH1-4 ativos, CH6 é Dimmer Geral 0-100%)
+                // 051 - 100: FADE (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
+                // 101 - 150: STROBO (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
+                // 151 - 200: SEQUENCIAL (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
+                // 201 - 255: FIXO (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
+
+                if (dmxCH6 <= 50) {
+                  modoAtual = 0; // Manual
+                  brilhoGeral = map(dmxCH6, 0, 50, 0, 255);
                   brilhoCanais[0] = dmxCH1;
                   brilhoCanais[1] = dmxCH2;
                   brilhoCanais[2] = dmxCH3;
                   brilhoCanais[3] = dmxCH4;
+                } else if (dmxCH6 <= 100) {
+                  modoAtual = 1; // Fade
+                  brilhoGeral = map(dmxCH6, 51, 100, 0, 255);
+                } else if (dmxCH6 <= 150) {
+                  modoAtual = 2; // Strobo
+                  brilhoGeral = map(dmxCH6, 101, 150, 0, 255);
+                } else if (dmxCH6 <= 200) {
+                  modoAtual = 3; // Sequencial
+                  brilhoGeral = map(dmxCH6, 151, 200, 0, 255);
                 } else {
-                  brilhoGeral = dmxCH1;
+                  modoAtual = 4; // Fixo
+                  brilhoGeral = map(dmxCH6, 201, 255, 0, 255);
                 }
                 // acordaTela(); // Não acordar a tela a cada pacote DMX para evitar flickering e lentidão
                 // atualizarDisplay(); // O endereço DMX não muda com os dados, não precisa redesenhar o OLED aqui
