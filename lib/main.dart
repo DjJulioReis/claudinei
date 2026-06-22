@@ -483,73 +483,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAnaliseGeral() {
-    return Card(
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.analytics_outlined, size: 18, color: Colors.amber),
-                SizedBox(width: 8),
-                Text("ANÁLISE GERAL EM TEMPO REAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(4, (index) {
-                return Column(
-                  children: [
-                    Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        Container(
-                          width: 25,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 100),
-                          width: 25,
-                          height: (niveisReaisCanais[index] / 100.0) * 80,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                Colors.amber.shade900,
-                                Colors.amber,
-                                Colors.amberAccent,
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                            boxShadow: [
-                              BoxShadow(color: Colors.amber.withOpacity(0.3), blurRadius: 8, spreadRadius: 1),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text("CH${index + 1}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                    Text("${niveisReaisCanais[index].toInt()}%", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber)),
-                  ],
-                );
-              }),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildPainelManuais() {
     bool isEfeitoManualAtivo = modosLista.isNotEmpty &&
         modoAtual < modosLista.length &&
@@ -558,8 +491,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       key: const ValueKey(2),
       children: [
-        _buildAnaliseGeral(),
-        const SizedBox(height: 8),
         Card(
           color: const Color(0xFF1E1E1E),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -817,32 +748,56 @@ class LedGridPainter extends CustomPainter {
       int row = i ~/ gridSize;
       int col = i % gridSize;
 
-      // Mapeia a placa para um dos 4 canais (distribuição em quadrantes ou alternada)
-      // Aqui usamos uma lógica simples: i % 4
-      int canalIdx = i % 4;
-      double nivel = niveisCanais[canalIdx] / 100.0;
-
       double x = col * (cellWidth + spacing);
       double y = row * (cellHeight + spacing);
 
-      final Rect rectPlaca = Rect.fromLTWH(x, y, cellWidth, cellHeight);
-
-      Color corDaPlaca = nivel > 0
-          ? corBase.withOpacity(nivel.clamp(0.1, 1.0))
-          : corApagado;
-
-      if (nivel > 0) {
-        final Paint glowPaint = Paint()
-          ..color = corBase.withOpacity(nivel * 0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-        canvas.drawRect(rectPlaca.inflate(2), glowPaint);
+      // Cada placa é dividida em dois canais:
+      // Placas pares (0, 2, 4...): Canal 1 e Canal 2
+      // Placas ímpares (1, 3, 5...): Canal 3 e Canal 4
+      int chA, chB;
+      if (i % 2 == 0) {
+        chA = 0; // CH1
+        chB = 1; // CH2
+      } else {
+        chA = 2; // CH3
+        chB = 3; // CH4
       }
 
-      final Paint ledPaint = Paint()
-        ..color = corDaPlaca
-        ..style = PaintingStyle.fill;
+      double nivelA = niveisCanais[chA] / 100.0;
+      double nivelB = niveisCanais[chB] / 100.0;
 
-      canvas.drawRRect(RRect.fromRectAndRadius(rectPlaca, const Radius.circular(4)), ledPaint);
+      final Rect rectPlaca = Rect.fromLTWH(x, y, cellWidth, cellHeight);
+
+      // Desenha o fundo da placa (apagado)
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rectPlaca, const Radius.circular(4)),
+        Paint()..color = corApagado,
+      );
+
+      // Desenha as duas metades representando os canais
+      // Metade Superior (Canal A)
+      if (nivelA > 0) {
+        final Rect rectA = Rect.fromLTWH(x + 2, y + 2, cellWidth - 4, (cellHeight / 2) - 3);
+        final Paint paintA = Paint()..color = corBase.withOpacity(nivelA.clamp(0.1, 1.0));
+        canvas.drawRect(rectA, paintA);
+
+        final Paint glowA = Paint()
+          ..color = corBase.withOpacity(nivelA * 0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+        canvas.drawRect(rectA.inflate(1), glowA);
+      }
+
+      // Metade Inferior (Canal B)
+      if (nivelB > 0) {
+        final Rect rectB = Rect.fromLTWH(x + 2, y + (cellHeight / 2) + 1, cellWidth - 4, (cellHeight / 2) - 3);
+        final Paint paintB = Paint()..color = corBase.withOpacity(nivelB.clamp(0.1, 1.0));
+        canvas.drawRect(rectB, paintB);
+
+        final Paint glowB = Paint()
+          ..color = corBase.withOpacity(nivelB * 0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+        canvas.drawRect(rectB.inflate(1), glowB);
+      }
     }
   }
 
