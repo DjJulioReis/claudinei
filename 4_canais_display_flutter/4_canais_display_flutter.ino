@@ -688,12 +688,6 @@ void processarComandoApp(String pacote) {
       modoAtual = 3;  // Força o sequencial
     } else if (valor == "CLEAR") {
       modoAtual = 0;  // Força a volta para o modo manual
-      if (dispositivoConectado) {
-        SerialBT.print("STATUS_PISTA:0,");
-        SerialBT.print(velocidad);
-        SerialBT.print(",");
-        SerialBT.println(map(brilhoGeral, 0, 255, 0, 100));
-      }
     }
   } else if (comando == "GET_CAPABILITIES") {
     SerialBT.println("CAPS:MANUAL,FADE,STROBO,SEQUENC,FIXO");

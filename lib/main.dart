@@ -755,9 +755,9 @@ class LedGridPainter extends CustomPainter {
       double yPlaca = rowPlaca * (cellHeight + spacing);
 
       // Cada placa tem 2 canais (lâmpadas internas)
-      // Pares: CH1 e CH2 | Ímpares: CH3 e CH4
+      // Checkerboard: Pares (row+col): CH1 e CH2 | Ímpares: CH3 e CH4
       int chFrio, chQuente;
-      if (i % 2 == 0) {
+      if ((rowPlaca + colPlaca) % 2 == 0) {
         chFrio = 0;   // CH1
         chQuente = 1; // CH2
       } else {
