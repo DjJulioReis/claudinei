@@ -558,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildSliderRow("VELOC. CANAL ${index + 1}", velocidadesCanaisManuais[index], (val) {
                           setState(() => velocidadesCanaisManuais[index] = val);
                         }, "SET_VCH${index + 1}", icon: Icons.speed),
-                        if (index < 3) const Divider(color: Colors.white05, height: 20),
+                        if (index < 3) Divider(color: Colors.white.withOpacity(0.05), height: 20),
                       ],
                     );
                   }),
