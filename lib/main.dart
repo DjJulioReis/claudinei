@@ -116,12 +116,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- CONTROLE TELEMÉTRICO DA PISTA (DIRETO DO ESP32) ---
   int tamanhoGrade = 4;
-  bool estadoAlternado = false;
   bool executandoEfeito = false;
-  double brilhoRealPista = 100;
+  List<double> niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
 
   // --- VALORES DOS CANAIS MANUAIS ---
-  int canalSelecionado = 1;
   List<double> brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
 
   int get totalPlacas => tamanhoGrade * tamanhoGrade;
@@ -135,10 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _inicializarPistaLeds() {
     setState(() {
-      estadoAlternado = false;
-      canalSelecionado = 1;
       executandoEfeito = false;
-      brilhoRealPista = brilhoGeral;
+      niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
       brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
     });
   }
@@ -186,18 +182,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
             if (linhaComando.isEmpty) continue;
 
-            if (linhaComando.startsWith("STATUS_PISTA:")) {
-              String dadosPista = linhaComando.replaceAll("STATUS_PISTA:", "");
-              List<String> variaveis = dadosPista.split(",");
-
-              if (variaveis.length >= 3) {
+            if (linhaComando.startsWith("CH_LEVELS:")) {
+              String dados = linhaComando.replaceAll("CH_LEVELS:", "");
+              List<String> niveis = dados.split(",");
+              if (niveis.length >= 4) {
                 setState(() {
-                  // Se o status for maior que 0, tem efeito rodando na pista
-                  executandoEfeito = variaveis[0] != "0";
-                  // Sincroniza a alternância do passo sequencial ou oscilação do strobo
-                  estadoAlternado = variaveis[0] == "2" || variaveis[0] == "0";
-                  velocidad = double.tryParse(variaveis[1]) ?? velocidad;
-                  brilhoRealPista = double.tryParse(variaveis[2]) ?? brilhoGeral;
+                  niveisReaisCanais = List.generate(4, (i) => double.tryParse(niveis[i]) ?? 0.0);
+                  executandoEfeito = niveisReaisCanais.any((v) => v > 0);
                 });
               }
             }
@@ -492,6 +483,73 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildAnaliseGeral() {
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.analytics_outlined, size: 18, color: Colors.amber),
+                SizedBox(width: 8),
+                Text("ANÁLISE GERAL EM TEMPO REAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(4, (index) {
+                return Column(
+                  children: [
+                    Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [
+                        Container(
+                          width: 25,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 100),
+                          width: 25,
+                          height: (niveisReaisCanais[index] / 100.0) * 80,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                Colors.amber.shade900,
+                                Colors.amber,
+                                Colors.amberAccent,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                            boxShadow: [
+                              BoxShadow(color: Colors.amber.withOpacity(0.3), blurRadius: 8, spreadRadius: 1),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text("CH${index + 1}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    Text("${niveisReaisCanais[index].toInt()}%", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber)),
+                  ],
+                );
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPainelManuais() {
     bool isEfeitoManualAtivo = modosLista.isNotEmpty &&
         modoAtual < modosLista.length &&
@@ -500,6 +558,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       key: const ValueKey(2),
       children: [
+        _buildAnaliseGeral(),
+        const SizedBox(height: 8),
         Card(
           color: const Color(0xFF1E1E1E),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -540,80 +600,75 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-
-                if (isEfeitoManualAtivo) ...[
-                  const Padding(
-                    padding: EdgeInsets.only(top: 20.0, bottom: 4.0),
-                    child: Divider(color: Colors.white10),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("CANAIS DE HARDWARE", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
-                      Text("CH: $canalSelecionado SELECIONADO", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: totalCanais,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 6,
-                      crossAxisSpacing: 6,
-                      childAspectRatio: 1.3,
-                    ),
-                    itemBuilder: (context, index) {
-                      final int numeroCanal = index + 1;
-                      final bool selecionado = canalSelecionado == numeroCanal;
-                      return ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: selecionado ? Colors.amber : const Color(0xFF2A2A2A),
-                          foregroundColor: selecionado ? Colors.black : Colors.white70,
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            canalSelecionado = numeroCanal;
-                          });
-                          // Sincroniza o ponteiro de canal ativo na tela
-                        },
-                        child: Text(
-                          "$numeroCanal",
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: selecionado ? FontWeight.bold : FontWeight.normal
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ],
             ),
           ),
         ),
+        if (isEfeitoManualAtivo) ...[
+          const SizedBox(height: 8),
+          Card(
+            color: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("CONTROLE MANUAL INDEPENDENTE", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  ...List.generate(4, (index) {
+                    return _buildSliderRow("CANAL ${index + 1}", brilhoCanaisManuais[index], (val) {
+                      setState(() => brilhoCanaisManuais[index] = val);
+                    }, "SET_CH${index + 1}");
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
-        _buildSliderCard("VELOCIDADE (STROBO / EFEITOS)", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
-        const SizedBox(height: 8),
-        // Se estiver em modo manual, o slider de Brilho controla diretamente o canal selecionado (SET_CHx), senão controla o Geral (SET_DIM)
-        _buildSliderCard(
-            isEfeitoManualAtivo ? "BRILHO INDIVIDUAL - CANAL $canalSelecionado" : "BRILHO GERAL",
-            isEfeitoManualAtivo ? brilhoCanaisManuais[canalSelecionado - 1] : brilhoGeral,
-                (val) {
-              setState(() {
-                if (isEfeitoManualAtivo) {
-                  brilhoCanaisManuais[canalSelecionado - 1] = val;
-                } else {
-                  brilhoGeral = val;
-                }
-              });
-            },
-            isEfeitoManualAtivo ? "SET_CH$canalSelecionado" : "SET_DIM"
-        ),
+        if (!isEfeitoManualAtivo) ...[
+          _buildSliderCard("VELOCIDADE (STROBO / EFEITOS)", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
+          const SizedBox(height: 8),
+          _buildSliderCard("BRILHO GERAL", brilhoGeral, (val) => setState(() => brilhoGeral = val), "SET_DIM"),
+        ] else ...[
+          _buildSliderCard("VELOCIDADE DA OSCILAÇÃO", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
+        ],
       ],
+    );
+  }
+
+  Widget _buildSliderRow(String label, double valor, Function(double) onCh, String cmd) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              Text("${valor.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            ),
+            child: Slider(
+              value: valor,
+              min: 0,
+              max: 100,
+              divisions: 100,
+              activeColor: Colors.amber,
+              inactiveColor: Colors.white10,
+              onChanged: onCh,
+              onChangeEnd: (v) => enviarComando(cmd, "${v.toInt()}"),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -695,10 +750,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: CustomPaint(
               size: Size.infinite,
               painter: LedGridPainter(
-                estadoAlternated: estadoAlternado,
                 gridSize: tamanhoGrade,
-                executando: executandoEfeito,
-                brilhoHardware: brilhoRealPista,
+                niveisCanais: niveisReaisCanais,
               ),
             ),
           ),
@@ -741,16 +794,12 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class LedGridPainter extends CustomPainter {
-  final bool estadoAlternated;
   final int gridSize;
-  final bool executando;
-  final double brilhoHardware;
+  final List<double> niveisCanais;
 
   LedGridPainter({
-    required this.estadoAlternated,
     required this.gridSize,
-    required this.executando,
-    required this.brilhoHardware,
+    required this.niveisCanais,
   });
 
   @override
@@ -761,37 +810,32 @@ class LedGridPainter extends CustomPainter {
     final double cellWidth = (size.width - (spacing * (gridSize - 1))) / gridSize;
     final double cellHeight = (size.height - (spacing * (gridSize - 1))) / gridSize;
 
-    double fatorBrilho = (brilhoHardware / 100.0).clamp(0.0, 1.0);
-
-    const Color corBrancoFrio = Color(0xFFE0E8FF);
-    const Color corBrancoQuente = Color(0xFFFFE3A3);
     final Color corApagado = Colors.grey.shade900;
+    const Color corBase = Colors.amber;
 
     for (int i = 0; i < totalPlacas; i++) {
       int row = i ~/ gridSize;
       int col = i % gridSize;
 
+      // Mapeia a placa para um dos 4 canais (distribuição em quadrantes ou alternada)
+      // Aqui usamos uma lógica simples: i % 4
+      int canalIdx = i % 4;
+      double nivel = niveisCanais[canalIdx] / 100.0;
+
       double x = col * (cellWidth + spacing);
       double y = row * (cellHeight + spacing);
 
       final Rect rectPlaca = Rect.fromLTWH(x, y, cellWidth, cellHeight);
-      Color corDaPlaca = corApagado;
 
-      if (executando) {
-        bool eParXadrez = (row + col) % 2 == 0;
+      Color corDaPlaca = nivel > 0
+          ? corBase.withOpacity(nivel.clamp(0.1, 1.0))
+          : corApagado;
 
-        if (estadoAlternated) {
-          corDaPlaca = eParXadrez ? corBrancoFrio : corBrancoQuente;
-        } else {
-          corDaPlaca = eParXadrez ? corBrancoQuente : corBrancoFrio;
-        }
-
-        corDaPlaca = corDaPlaca.withOpacity(fatorBrilho);
-
+      if (nivel > 0) {
         final Paint glowPaint = Paint()
-          ..color = corDaPlaca.withOpacity(fatorBrilho * 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-        canvas.drawRect(rectPlaca.inflate(1.5), glowPaint);
+          ..color = corBase.withOpacity(nivel * 0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        canvas.drawRect(rectPlaca.inflate(2), glowPaint);
       }
 
       final Paint ledPaint = Paint()
@@ -804,9 +848,7 @@ class LedGridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant LedGridPainter oldDelegate) {
-    return oldDelegate.estadoAlternated != estadoAlternated ||
-        oldDelegate.gridSize != gridSize ||
-        oldDelegate.executando != executando ||
-        oldDelegate.brilhoHardware != brilhoHardware;
+    return oldDelegate.gridSize != gridSize ||
+        oldDelegate.niveisCanais != niveisCanais;
   }
 }

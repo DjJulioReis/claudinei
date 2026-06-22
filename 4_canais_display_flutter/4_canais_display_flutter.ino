@@ -68,6 +68,7 @@ int enderecoDMX = 1;
 int linhaSelecionada = 0;
 int canalSelecionado = 0;
 int brilhoCanais[4] = { 255, 255, 255, 255 };
+int niveisAtuais[4] = { 0, 0, 0, 0 };
 
 const char* nomesEfeitos[] = { "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
 
@@ -94,6 +95,8 @@ bool dispositivoConectado = false;
 void atualizarDisplay();
 void acordaTela();
 void executarEfeitos();
+void writeChannel(int ch, int val);
+void enviarNiveisBT();
 void processarMesaDMX();
 void imprimeNumero(int num);
 void salvarConfiguracao();
@@ -415,42 +418,57 @@ void desenharLogo(const uint8_t* bitmap) {
   }
 }
 
+void writeChannel(int ch, int val) {
+  if (ch < 0 || ch > 3) return;
+  niveisAtuais[ch] = val;
+  switch (ch) {
+    case 0: ledcWrite(MOSFET_CH1, val); break;
+    case 1: ledcWrite(MOSFET_CH2, val); break;
+    case 2: ledcWrite(MOSFET_CH3, val); break;
+    case 3: ledcWrite(MOSFET_CH4, val); break;
+  }
+}
+
+void enviarNiveisBT() {
+  static unsigned long ultimoEnvioNiveis = 0;
+  if (dispositivoConectado && millis() - ultimoEnvioNiveis >= 60) {
+    ultimoEnvioNiveis = millis();
+    SerialBT.print("CH_LEVELS:");
+    SerialBT.print(map(niveisAtuais[0], 0, 255, 0, 100)); SerialBT.print(",");
+    SerialBT.print(map(niveisAtuais[1], 0, 255, 0, 100)); SerialBT.print(",");
+    SerialBT.print(map(niveisAtuais[2], 0, 255, 0, 100)); SerialBT.print(",");
+    SerialBT.println(map(niveisAtuais[3], 0, 255, 0, 100));
+  }
+}
+
 void executarEfeitos() {
   unsigned long tempoAtual = millis();
   int delayEfeito = map(velocidad, 0, 100, 800, 25);
-  static unsigned long ultimoEnvioBT = 0;
 
   // --- MODO MANUAL: PISCADA INDEPENDENTE DINÂMICA ---
   if (modoAtual == 0) {
     if (velocidad >= 100) {
       // Velocidade máxima = canais estáticos (comportamento padrão)
-      ledcWrite(MOSFET_CH1, brilhoCanais[0]);
-      ledcWrite(MOSFET_CH2, brilhoCanais[1]);
-      ledcWrite(MOSFET_CH3, brilhoCanais[2]);
-      ledcWrite(MOSFET_CH4, brilhoCanais[3]);
+      writeChannel(0, brilhoCanais[0]);
+      writeChannel(1, brilhoCanais[1]);
+      writeChannel(2, brilhoCanais[2]);
+      writeChannel(3, brilhoCanais[3]);
     } 
     else {
       static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
       static boolean estadosCanais[4] = {false, false, false, false};
       int delaysIndividuais[4];
 
-      // Calcula o tempo de cada canal baseado no brilho dele:
-      // Canais com brilho menor (fracos) piscam mais rápido.
-      // Canais com brilho maior (fortes) piscam mais devagar.
       for (int i = 0; i < 4; i++) {
         if (brilhoCanais[i] > 0) {
-          // Mapeia o brilho (0-255) para um multiplicador de tempo (ex: 0.4x a 2.0x do delay base)
           float fatorBrilho = map(brilhoCanais[i], 1, 255, 4, 20) / 10.0;
           delaysIndividuais[i] = delayEfeito * fatorBrilho;
-          
-          // Garante um tempo mínimo para não travar o ESP32
           if (delaysIndividuais[i] < 15) delaysIndividuais[i] = 15; 
         } else {
           delaysIndividuais[i] = delayEfeito;
         }
       }
 
-      // Processa a oscilação individual de cada canal
       for (int i = 0; i < 4; i++) {
         if (tempoAtual - ultimosTempos[i] >= (unsigned long)delaysIndividuais[i]) {
           ultimosTempos[i] = tempoAtual;
@@ -458,30 +476,22 @@ void executarEfeitos() {
         }
       }
 
-      // Aplica o brilho individual se o canal estiver no estado "ligado"
-      ledcWrite(MOSFET_CH1, estadosCanais[0] ? brilhoCanais[0] : 0);
-      ledcWrite(MOSFET_CH2, estadosCanais[1] ? brilhoCanais[1] : 0);
-      ledcWrite(MOSFET_CH3, estadosCanais[2] ? brilhoCanais[2] : 0);
-      ledcWrite(MOSFET_CH4, estadosCanais[3] ? brilhoCanais[3] : 0);
+      writeChannel(0, estadosCanais[0] ? brilhoCanais[0] : 0);
+      writeChannel(1, estadosCanais[1] ? brilhoCanais[1] : 0);
+      writeChannel(2, estadosCanais[2] ? brilhoCanais[2] : 0);
+      writeChannel(3, estadosCanais[3] ? brilhoCanais[3] : 0);
     }
+    enviarNiveisBT();
     return;
   }
 
-  int brilhoPorcentagem = map(brilhoGeral, 0, 255, 0, 100);
-
   // 2. TRAVA DE SEGURANÇA PARA OS MODOS DE EFEITO (MODOS 1 A 4)
   if (brilhoGeral == 0) {
-    ledcWrite(MOSFET_CH1, 0);
-    ledcWrite(MOSFET_CH2, 0);
-    ledcWrite(MOSFET_CH3, 0);
-    ledcWrite(MOSFET_CH4, 0);
-
-    if (dispositivoConectado && (tempoAtual - ultimaAtualizacaoEfeito >= 200)) {
-      SerialBT.print("STATUS_PISTA:0,");
-      SerialBT.print(velocidad);
-      SerialBT.print(",");
-      SerialBT.println(0);
-    }
+    writeChannel(0, 0);
+    writeChannel(1, 0);
+    writeChannel(2, 0);
+    writeChannel(3, 0);
+    enviarNiveisBT();
     return;
   }
 
@@ -494,55 +504,29 @@ void executarEfeitos() {
         else fadeValue -= 5;
         if (fadeValue >= 255 || fadeValue <= 0) fadeDirection = !fadeDirection;
 
-        ledcWrite(MOSFET_CH1, (fadeValue * brilhoGeral) / 255);
-        ledcWrite(MOSFET_CH2, ((255 - fadeValue) * brilhoGeral) / 255);
-        ledcWrite(MOSFET_CH3, ((255 - fadeValue) * brilhoGeral) / 255);
-        ledcWrite(MOSFET_CH4, (fadeValue * brilhoGeral) / 255);
-
-        if (dispositivoConectado && (tempoAtual - ultimoEnvioBT >= 150)) {
-          ultimoEnvioBT = tempoAtual;
-          int brilhoDinamicoFade = map((fadeValue * brilhoGeral) / 255, 0, 255, 0, 100);
-          SerialBT.print("STATUS_PISTA:1,");
-          SerialBT.print(velocidad);
-          SerialBT.print(",");
-          SerialBT.println(brilhoDinamicoFade);
-        }
+        writeChannel(0, (fadeValue * brilhoGeral) / 255);
+        writeChannel(1, ((255 - fadeValue) * brilhoGeral) / 255);
+        writeChannel(2, ((255 - fadeValue) * brilhoGeral) / 255);
+        writeChannel(3, (fadeValue * brilhoGeral) / 255);
       }
       break;
 
     case 2:  // STROBO GERAL
       if (velocidad >= 100) {
-        ledcWrite(MOSFET_CH1, brilhoGeral);
-        ledcWrite(MOSFET_CH2, brilhoGeral);
-        ledcWrite(MOSFET_CH3, brilhoGeral);
-        ledcWrite(MOSFET_CH4, brilhoGeral);
-
-        if (dispositivoConectado && (tempoAtual - ultimoEnvioBT >= 500)) {
-          ultimoEnvioBT = tempoAtual;
-          SerialBT.print("STATUS_PISTA:1,");
-          SerialBT.print(velocidad);
-          SerialBT.print(",");
-          SerialBT.println(brilhoPorcentagem);
-        }
+        writeChannel(0, brilhoGeral);
+        writeChannel(1, brilhoGeral);
+        writeChannel(2, brilhoGeral);
+        writeChannel(3, brilhoGeral);
       }
       else {
         if (tempoAtual - ultimaAtualizacaoEfeito >= (unsigned long)delayEfeito) {
           ultimaAtualizacaoEfeito = tempoAtual;
           estadoStrobo = !estadoStrobo;
           int intensidade = estadoStrobo ? brilhoGeral : 0;
-
-          ledcWrite(MOSFET_CH1, intensidade);
-          ledcWrite(MOSFET_CH2, intensidade);
-          ledcWrite(MOSFET_CH3, intensidade);
-          ledcWrite(MOSFET_CH4, intensidade);
-
-          if (dispositivoConectado && (tempoAtual - ultimoEnvioBT >= 150)) {
-            ultimoEnvioBT = tempoAtual;
-            SerialBT.print(estadoStrobo ? "STATUS_PISTA:1," : "STATUS_PISTA:0,");
-            SerialBT.print(velocidad);
-            SerialBT.print(",");
-            SerialBT.println(brilhoPorcentagem);
-          }
+          writeChannel(0, intensidade);
+          writeChannel(1, intensidade);
+          writeChannel(2, intensidade);
+          writeChannel(3, intensidade);
         }
       }
       break;
@@ -551,39 +535,21 @@ void executarEfeitos() {
       if (tempoAtual - ultimaAtualizacaoEfeito >= (unsigned long)delayEfeito) {
         ultimaAtualizacaoEfeito = tempoAtual;
         passoAlternado = (passoAlternado + 1) % 4;
-
-        ledcWrite(MOSFET_CH1, (passoAlternado == 0) ? brilhoGeral : 0);
-        ledcWrite(MOSFET_CH2, (passoAlternado == 1) ? brilhoGeral : 0);
-        ledcWrite(MOSFET_CH3, (passoAlternado == 2) ? brilhoGeral : 0);
-        ledcWrite(MOSFET_CH4, (passoAlternado == 3) ? brilhoGeral : 0);
-
-        if (dispositivoConectado && (tempoAtual - ultimoEnvioBT >= 150)) {
-          ultimoEnvioBT = tempoAtual;
-          SerialBT.print("STATUS_PISTA:");
-          SerialBT.print(passoAlternado + 1);
-          SerialBT.print(",");
-          SerialBT.print(velocidad);
-          SerialBT.print(",");
-          SerialBT.println(brilhoPorcentagem);
-        }
+        writeChannel(0, (passoAlternado == 0) ? brilhoGeral : 0);
+        writeChannel(1, (passoAlternado == 1) ? brilhoGeral : 0);
+        writeChannel(2, (passoAlternado == 2) ? brilhoGeral : 0);
+        writeChannel(3, (passoAlternado == 3) ? brilhoGeral : 0);
       }
       break;
 
     case 4:  // FIXO
-      ledcWrite(MOSFET_CH1, brilhoGeral);
-      ledcWrite(MOSFET_CH2, brilhoGeral);
-      ledcWrite(MOSFET_CH3, brilhoGeral);
-      ledcWrite(MOSFET_CH4, brilhoGeral);
-
-      if (dispositivoConectado && (tempoAtual - ultimoEnvioBT >= 500)) {
-        ultimoEnvioBT = tempoAtual;
-        SerialBT.print("STATUS_PISTA:1,");
-        SerialBT.print(velocidad);
-        SerialBT.print(",");
-        SerialBT.println(brilhoPorcentagem);
-      }
+      writeChannel(0, brilhoGeral);
+      writeChannel(1, brilhoGeral);
+      writeChannel(2, brilhoGeral);
+      writeChannel(3, brilhoGeral);
       break;
   }
+  enviarNiveisBT();
 }
 
 void processarMesaDMX() {
@@ -641,6 +607,8 @@ void processarMesaDMX() {
                 } else {
                   brilhoGeral = dmxCH1;
                 }
+                acordaTela();
+                atualizarDisplay();
               }
               dmx_em_frame = false;
             }
