@@ -744,8 +744,8 @@ class LedGridPainter extends CustomPainter {
     final Color corApagado = Colors.grey.shade900;
     const Color corBase = Colors.amber;
 
-    // Cada placa terá uma mini-grade 4x4 de pixels
-    const int pixelsPerSide = 4;
+    // Cada placa terá uma mini-grade 2x2 de pixels (total 4 pixels alternados)
+    const int pixelsPerSide = 2;
     final double pixelWidth = cellWidth / pixelsPerSide;
     final double pixelHeight = cellHeight / pixelsPerSide;
 
