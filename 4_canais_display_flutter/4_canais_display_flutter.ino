@@ -794,51 +794,68 @@ void atualizarDisplay() {
   if (!telaAcesa) return;
   oled.clear();
 
+  // --- HEADER (MODO DE OPERAÇÃO) ---
+  oled.setInvertMode(true);
   if (sistemaEmModoDMX) {
-    oled.write("   --- MESA DMX ---\n\n");
-    oled.write(" CANAL: ");
-    imprimeNumero(enderecoDMX);
+    oled.print("      MODO: MESA DMX     ");
   } else {
-    oled.write(dispositivoConectado ? "   --- BT APP ---\n" : "   - PAINEL RF -\n");
+    oled.print(dispositivoConectado ? "      MODO: APP BT       " : "     MODO: PAINEL RF     ");
+  }
+  oled.setInvertMode(false);
+  oled.println();
 
-    const char* setaL0 = "  ";
-    const char* setaL1 = "  ";
-    const char* setaL2 = "  ";
+  if (sistemaEmModoDMX) {
+    oled.println("\n\n ENDERECO INICIAL:");
+    oled.set2X();
+    oled.print("  CH ");
+    imprimeNumero(enderecoDMX);
+    oled.set1X();
+  } else {
+    // --- LINHA DO MODO (EFEITO) ---
+    oled.println();
+    if (faseAtual == FASE_MODO) oled.print("> "); else oled.print("  ");
+    oled.print("EFEITO: ");
+    oled.set2X();
+    oled.println(nomesEfeitos[modoAtual]);
+    oled.set1X();
 
-    if (faseAtual == FASE_MODO) {
-      setaL0 = "> ";
-    } else if (faseAtual == FASE_CAMPO) {
-      if (linhaSelecionada == 1) setaL1 = "> ";
-      if (linhaSelecionada == 2) setaL2 = "> ";
-    } else if (faseAtual == FASE_VALOR) {
-      if (linhaSelecionada == 1) setaL1 = ">>";
-      if (linhaSelecionada == 2) setaL2 = ">>";
+    oled.println("-------------------------");
+
+    if (modoAtual == 0) { // MANUAL
+      // Mostrar status dos 4 canais em colunas
+      oled.println(" CH1:  CH2:  CH3:  CH4:");
+
+      for(int i=0; i<4; i++) {
+        int perc = map(brilhoCanais[i], 0, 255, 0, 99);
+        if (perc < 10) oled.print(" ");
+        imprimeNumero(perc);
+        oled.print("%  ");
+      }
+      oled.println();
+
+      // Indicador de seleção
+      if (faseAtual != FASE_MODO) {
+        int pos[] = {1, 7, 13, 19};
+        oled.setCursor(pos[canalSelecionado] * 6, 6);
+        if (faseAtual == FASE_VALOR) oled.print("^^"); else oled.print("--");
+      }
     }
-
-    oled.write(setaL0);
-    oled.write("MODO: ");
-    oled.write(nomesEfeitos[modoAtual]);
-    oled.write("\n");
-
-    oled.write(setaL1);
-    if (modoAtual == 0) {
-      oled.write("CANAL: CH");
-      imprimeNumero(canalSelecionado + 1);
-    } else {
-      oled.write("VEL: ");
+    else { // EFEITOS
+      // Linha de Velocidade
+      if (faseAtual == FASE_CAMPO && linhaSelecionada == 1) oled.print("> ");
+      else if (faseAtual == FASE_VALOR && linhaSelecionada == 1) oled.print(">>");
+      else oled.print("  ");
+      oled.print("VELOCIDADE: ");
       imprimeNumero(velocidad);
-      oled.write("%");
-    }
-    oled.write("\n");
+      oled.println("%");
 
-    oled.write(setaL2);
-    if (modoAtual == 0) {
-      oled.write("DIM CH: ");
-      imprimeNumero(map(brilhoCanais[canalSelecionado], 0, 255, 0, 100));
-    } else {
-      oled.write("DIM GERAL: ");
+      // Linha de Brilho
+      if (faseAtual == FASE_CAMPO && linhaSelecionada == 2) oled.print("> ");
+      else if (faseAtual == FASE_VALOR && linhaSelecionada == 2) oled.print(">>");
+      else oled.print("  ");
+      oled.print("BRILHO GERAL: ");
       imprimeNumero(map(brilhoGeral, 0, 255, 0, 100));
+      oled.println("%");
     }
-    oled.write("%");
   }
 }
