@@ -744,16 +744,19 @@ class LedGridPainter extends CustomPainter {
     final Color corApagado = Colors.grey.shade900;
     const Color corBase = Colors.amber;
 
+    // Cada placa terá uma mini-grade 4x4 de pixels
+    const int pixelsPerSide = 4;
+    final double pixelWidth = cellWidth / pixelsPerSide;
+    final double pixelHeight = cellHeight / pixelsPerSide;
+
     for (int i = 0; i < totalPlacas; i++) {
-      int row = i ~/ gridSize;
-      int col = i % gridSize;
+      int rowPlaca = i ~/ gridSize;
+      int colPlaca = i % gridSize;
 
-      double x = col * (cellWidth + spacing);
-      double y = row * (cellHeight + spacing);
+      double xPlaca = colPlaca * (cellWidth + spacing);
+      double yPlaca = rowPlaca * (cellHeight + spacing);
 
-      // Cada placa é dividida em dois canais:
-      // Placas pares (0, 2, 4...): Canal 1 e Canal 2
-      // Placas ímpares (1, 3, 5...): Canal 3 e Canal 4
+      // Determina quais canais esta placa usa
       int chA, chB;
       if (i % 2 == 0) {
         chA = 0; // CH1
@@ -766,37 +769,44 @@ class LedGridPainter extends CustomPainter {
       double nivelA = niveisCanais[chA] / 100.0;
       double nivelB = niveisCanais[chB] / 100.0;
 
-      final Rect rectPlaca = Rect.fromLTWH(x, y, cellWidth, cellHeight);
+      final Rect rectPlaca = Rect.fromLTWH(xPlaca, yPlaca, cellWidth, cellHeight);
 
-      // Desenha o fundo da placa (apagado)
+      // Fundo da placa
       canvas.drawRRect(
         RRect.fromRectAndRadius(rectPlaca, const Radius.circular(4)),
-        Paint()..color = corApagado,
+        Paint()..color = Colors.black,
       );
 
-      // Desenha as duas metades representando os canais
-      // Metade Superior (Canal A)
-      if (nivelA > 0) {
-        final Rect rectA = Rect.fromLTWH(x + 2, y + 2, cellWidth - 4, (cellHeight / 2) - 3);
-        final Paint paintA = Paint()..color = corBase.withOpacity(nivelA.clamp(0.1, 1.0));
-        canvas.drawRect(rectA, paintA);
+      // Desenha pixels alternados (xadrez) dentro da placa
+      for (int py = 0; py < pixelsPerSide; py++) {
+        for (int px = 0; px < pixelsPerSide; px++) {
+          bool useChA = (px + py) % 2 == 0;
+          double nivel = useChA ? nivelA : nivelB;
 
-        final Paint glowA = Paint()
-          ..color = corBase.withOpacity(nivelA * 0.3)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-        canvas.drawRect(rectA.inflate(1), glowA);
-      }
+          double xPixel = xPlaca + (px * pixelWidth);
+          double yPixel = yPlaca + (py * pixelHeight);
 
-      // Metade Inferior (Canal B)
-      if (nivelB > 0) {
-        final Rect rectB = Rect.fromLTWH(x + 2, y + (cellHeight / 2) + 1, cellWidth - 4, (cellHeight / 2) - 3);
-        final Paint paintB = Paint()..color = corBase.withOpacity(nivelB.clamp(0.1, 1.0));
-        canvas.drawRect(rectB, paintB);
+          final Rect rectPixel = Rect.fromLTWH(
+            xPixel + 1,
+            yPixel + 1,
+            pixelWidth - 2,
+            pixelHeight - 2
+          );
 
-        final Paint glowB = Paint()
-          ..color = corBase.withOpacity(nivelB * 0.3)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-        canvas.drawRect(rectB.inflate(1), glowB);
+          if (nivel > 0) {
+            final Paint pixelPaint = Paint()
+              ..color = corBase.withOpacity(nivel.clamp(0.1, 1.0));
+            canvas.drawRect(rectPixel, pixelPaint);
+
+            // Brilho opcional para dar profundidade
+            final Paint glow = Paint()
+              ..color = corBase.withOpacity(nivel * 0.2)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+            canvas.drawRect(rectPixel.inflate(1), glow);
+          } else {
+            canvas.drawRect(rectPixel, Paint()..color = corApagado);
+          }
+        }
       }
     }
   }
