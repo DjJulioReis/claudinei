@@ -607,8 +607,8 @@ void processarMesaDMX() {
                 } else {
                   brilhoGeral = dmxCH1;
                 }
-                acordaTela();
-                atualizarDisplay();
+                // acordaTela(); // Não acordar a tela a cada pacote DMX para evitar flickering e lentidão
+                // atualizarDisplay(); // O endereço DMX não muda com os dados, não precisa redesenhar o OLED aqui
               }
               dmx_em_frame = false;
             }
