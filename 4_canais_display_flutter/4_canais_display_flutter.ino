@@ -593,66 +593,38 @@ void processarMesaDMX() {
             }
             dmx_idx++;
 
-            if (dmx_idx >= (enderecoDMX + 6)) {
+            // AGUARDA RECEBER OS 7 CANAIS (enderecoDMX + 7)
+            if (dmx_idx >= (enderecoDMX + 7)) {
               if (raw_dmx_buf[0] == 0x00) {
                 ultimoPacoteDMX = millis();
 
                 int idx = enderecoDMX;
-                int dmxCH1 = raw_dmx_buf[idx + 0];
-                int dmxCH2 = raw_dmx_buf[idx + 1];
-                int dmxCH3 = raw_dmx_buf[idx + 2];
-                int dmxCH4 = raw_dmx_buf[idx + 3];
-                int dmxCH5 = raw_dmx_buf[idx + 4];
-                int dmxCH6 = raw_dmx_buf[idx + 5];
+                int dmxCH1 = raw_dmx_buf[idx + 0]; // Canal 1
+                int dmxCH2 = raw_dmx_buf[idx + 1]; // Canal 2
+                int dmxCH3 = raw_dmx_buf[idx + 2]; // Canal 3
+                int dmxCH4 = raw_dmx_buf[idx + 3]; // Canal 4
+                int dmxCH5 = raw_dmx_buf[idx + 4]; // DIMMER GERAL (Novo CH5)
+                int dmxCH6 = raw_dmx_buf[idx + 5]; // VELOCIDADE (Novo CH6)
+                int dmxCH7 = raw_dmx_buf[idx + 6]; // SELETOR DE EFEITOS (Novo CH7)
 
-                if (dmxCH6 <= 50) modoAtual = 0;
-                else if (dmxCH6 <= 100) modoAtual = 1;
-                else if (dmxCH6 <= 150) modoAtual = 2;
-                else if (dmxCH6 <= 200) modoAtual = 3;
-                else modoAtual = 4;
+                // 1. Aplica o Dimmer Geral direto do CH5
+                brilhoGeral = dmxCH5;
 
-                velocidad = map(dmxCH5, 0, 255, 0, 100);
+                // 2. Aplica a Velocidade direto do CH6
+                velocidad = map(dmxCH6, 0, 255, 0, 100);
 
-                // MAPEAMENTO DMX FINALIZADO:
-                // CH1: Dimmer Canal 1 (Manual)
-                // CH2: Dimmer Canal 2 (Manual)
-                // CH3: Dimmer Canal 3 (Manual)
-                // CH4: Dimmer Canal 4 (Manual)
-                // CH5: Velocidade (Efeitos)
-                // CH6: Master Dimmer / Seletor de Modo
+                // 3. Define os canais independentes (para uso no modo Manual)
+                brilhoCanais[0] = dmxCH1;
+                brilhoCanais[1] = dmxCH2;
+                brilhoCanais[2] = dmxCH3;
+                brilhoCanais[3] = dmxCH4;
 
-                // Faixas do CH6:
-                // 000 - 080: MANUAL (Canais 1-4 Ativos, CH6 é Master Dimmer)
-                // 081 - 120: FADE (Canais 1-4 Ignorados, CH6 é Master Dimmer)
-                // 121 - 160: STROBO (Canais 1-4 Ignorados, CH6 é Master Dimmer)
-                // 161 - 200: SEQUENCIAL (Canais 1-4 Ignorados, CH6 é Master Dimmer)
-                // 201 - 255: FIXO (Canais 1-4 Ignorados, CH6 é Master Dimmer)
-
-                if (dmxCH6 <= 80) {
-                  modoAtual = 0; // Manual
-                  brilhoGeral = map(dmxCH6, 0, 80, 0, 255);
-                  brilhoCanais[0] = dmxCH1;
-                  brilhoCanais[1] = dmxCH2;
-                  brilhoCanais[2] = dmxCH3;
-                  brilhoCanais[3] = dmxCH4;
-                } else {
-                  // Canais 1-4 são ignorados em modos de efeito
-                  if (dmxCH6 <= 120) {
-                    modoAtual = 1; // Fade
-                    brilhoGeral = map(dmxCH6, 81, 120, 0, 255);
-                  } else if (dmxCH6 <= 160) {
-                    modoAtual = 2; // Strobo
-                    brilhoGeral = map(dmxCH6, 121, 160, 0, 255);
-                  } else if (dmxCH6 <= 200) {
-                    modoAtual = 3; // Sequencial
-                    brilhoGeral = map(dmxCH6, 161, 200, 0, 255);
-                  } else {
-                    modoAtual = 4; // Fixo
-                    brilhoGeral = map(dmxCH6, 201, 255, 0, 255);
-                  }
-                }
-                // acordaTela(); // Não acordar a tela a cada pacote DMX para evitar flickering e lentidão
-                // atualizarDisplay(); // O endereço DMX não muda com os dados, não precisa redesenhar o OLED aqui
+                // 4. Seleciona o Modo de Efeito baseado puramente no CH7
+                if (dmxCH7 <= 50)        modoAtual = 0; // Manual
+                else if (dmxCH7 <= 100)  modoAtual = 1; // Fade
+                else if (dmxCH7 <= 150)  modoAtual = 2; // Strobo
+                else if (dmxCH7 <= 200)  modoAtual = 3; // Sequencial
+                else                     modoAtual = 4; // Fixo
               }
               dmx_em_frame = false;
             }
@@ -799,68 +771,68 @@ void atualizarDisplay() {
   if (!telaAcesa) return;
   oled.clear();
 
-  // --- HEADER (MODO DE OPERAÇÃO) ---
-  oled.setInvertMode(true);
   if (sistemaEmModoDMX) {
-    oled.print("      MODO: MESA DMX     ");
-  } else {
-    oled.print(dispositivoConectado ? "      MODO: APP BT       " : "     MODO: PAINEL RF     ");
-  }
-  oled.setInvertMode(false);
-  oled.println();
+    oled.set1X();
+    oled.write("--- MESA DMX: 7 CHs ---\n\n");
+    oled.write("STATUS: ");
+    oled.write(sinalDMXAtivo ? "[ SINAL OK ]\n\n" : "[ SEM SINAL ]\n\n");
 
-  if (sistemaEmModoDMX) {
-    oled.println("\n\n ENDERECO INICIAL:");
+    oled.write(" MODO ATIVO: ");
+    oled.write(nomesEfeitos[modoAtual]);
+    oled.write("\n\n");
+
     oled.set2X();
-    oled.print("  CH ");
+    oled.write("CH: ");
     imprimeNumero(enderecoDMX);
     oled.set1X();
-  } else {
-    // --- LINHA DO MODO (EFEITO) ---
-    oled.println();
-    if (faseAtual == FASE_MODO) oled.print("> "); else oled.print("  ");
-    oled.print("EFEITO: ");
+  }
+  else {
+    // Mantém a lógica do painel manual e Bluetooth inalterada
+    oled.set1X();
+    oled.write(dispositivoConectado ? "* LINK BLUETOOTH ATIVO *\n" : "--- CONTROLE PAINEL RF ---\n");
+
+    const char* setaL0 = "  ";
+    const char* setaL1 = "  ";
+    const char* setaL2 = "  ";
+
+    if (faseAtual == FASE_MODO) {
+      setaL0 = "> ";
+    } else if (faseAtual == FASE_CAMPO) {
+      if (linhaSelecionada == 1) setaL1 = "> ";
+      if (linhaSelecionada == 2) setaL2 = "> ";
+    } else if (faseAtual == FASE_VALOR) {
+      if (linhaSelecionada == 1) setaL1 = ">>";
+      if (linhaSelecionada == 2) setaL2 = ">>";
+    }
+
+    oled.write(setaL0);
+    oled.write("MODO:\n");
+
     oled.set2X();
-    oled.println(nomesEfeitos[modoAtual]);
+    oled.write(" ");
+    oled.write(nomesEfeitos[modoAtual]);
+    oled.write("\n");
     oled.set1X();
 
-    oled.println("-------------------------");
-
-    if (modoAtual == 0) { // MANUAL
-      // Mostrar status dos 4 canais em colunas
-      oled.println(" CH1:  CH2:  CH3:  CH4:");
-
-      for(int i=0; i<4; i++) {
-        int perc = map(brilhoCanais[i], 0, 255, 0, 99);
-        if (perc < 10) oled.print(" ");
-        imprimeNumero(perc);
-        oled.print("%  ");
-      }
-      oled.println();
-
-      // Indicador de seleção
-      if (faseAtual != FASE_MODO) {
-        int pos[] = {1, 7, 13, 19};
-        oled.setCursor(pos[canalSelecionado] * 6, 6);
-        if (faseAtual == FASE_VALOR) oled.print("^^"); else oled.print("--");
-      }
-    }
-    else { // EFEITOS
-      // Linha de Velocidade
-      if (faseAtual == FASE_CAMPO && linhaSelecionada == 1) oled.print("> ");
-      else if (faseAtual == FASE_VALOR && linhaSelecionada == 1) oled.print(">>");
-      else oled.print("  ");
-      oled.print("VELOCIDADE: ");
+    oled.write(setaL1);
+    if (modoAtual == 0) {
+      oled.write("EDITAR: CANAL CH");
+      imprimeNumero(canalSelecionado + 1);
+    } else {
+      oled.write("VELOCIDADE: ");
       imprimeNumero(velocidad);
-      oled.println("%");
-
-      // Linha de Brilho
-      if (faseAtual == FASE_CAMPO && linhaSelecionada == 2) oled.print("> ");
-      else if (faseAtual == FASE_VALOR && linhaSelecionada == 2) oled.print(">>");
-      else oled.print("  ");
-      oled.print("BRILHO GERAL: ");
-      imprimeNumero(map(brilhoGeral, 0, 255, 0, 100));
-      oled.println("%");
+      oled.write("%");
     }
+    oled.write("\n");
+
+    oled.write(setaL2);
+    if (modoAtual == 0) {
+      oled.write("BRILHO CANAL: ");
+      imprimeNumero(map(brilhoCanais[canalSelecionado], 0, 255, 0, 100));
+    } else {
+      oled.write("BRILHO GERAL: ");
+      imprimeNumero(map(brilhoGeral, 0, 255, 0, 100));
+    }
+    oled.write("%\n");
   }
 }
