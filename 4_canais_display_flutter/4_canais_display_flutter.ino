@@ -511,19 +511,35 @@ void executarEfeitos() {
 
   // 3. PROCESSAMENTO DOS EFEITOS AUTOMÁTICOS (MODOS 1 A 4)
   switch (modoAtual) {
-    case 1:  // FADE
-      if (tempoAtual - ultimaAtualizacaoEfeito >= (unsigned long)delayEfeito / 4) {
-        ultimaAtualizacaoEfeito = tempoAtual;
-        if (fadeDirection) fadeValue += 5;
-        else fadeValue -= 5;
-        if (fadeValue >= 255 || fadeValue <= 0) fadeDirection = !fadeDirection;
+    case 1:  // FADE COSSENOIDAL FLUIDO (PASSO A PASSO DE 1 EM 1)
+  // Removeu o "/ 4" para rodar mais rápido e compensar o passo suave de 1 em 1
+  if (tempoAtual - ultimaAtualizacaoEfeito >= (unsigned long)delayEfeito / 12) {
+    ultimaAtualizacaoEfeito = tempoAtual;
 
-        writeChannel(0, (fadeValue * brilhoGeral) / 255);
-        writeChannel(1, ((255 - fadeValue) * brilhoGeral) / 255);
-        writeChannel(2, ((255 - fadeValue) * brilhoGeral) / 255);
-        writeChannel(3, (fadeValue * brilhoGeral) / 255);
-      }
-      break;
+    // Atualiza de 1 em 1 para máxima resolução visual
+    if (fadeDirection) {
+      fadeValue++;
+    } else {
+      fadeValue--;
+    }
+
+    // Inversão suave nas bordas exatas sem repetir valores
+    if (fadeValue >= 255) {
+      fadeValue = 255;
+      fadeDirection = false; // Começa a descer no próximo frame
+    }
+    else if (fadeValue <= 0) {
+      fadeValue = 0;
+      fadeDirection = true;  // Começa a subir no próximo frame
+    }
+
+    // Envia para os MOSFETs com transição cruzada perfeita
+    writeChannel(0, (fadeValue * brilhoGeral) / 255);
+    writeChannel(1, ((255 - fadeValue) * brilhoGeral) / 255);
+    writeChannel(2, ((255 - fadeValue) * brilhoGeral) / 255);
+    writeChannel(3, (fadeValue * brilhoGeral) / 255);
+  }
+  break;
 
     case 2:  // STROBO GERAL
       if (velocidad >= 100) {
