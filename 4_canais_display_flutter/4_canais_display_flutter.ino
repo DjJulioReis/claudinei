@@ -157,6 +157,7 @@ void setup() {
   velocidadesCanais[1] = preferences.getInt("vch2", 100);
   velocidadesCanais[2] = preferences.getInt("vch3", 100);
   velocidadesCanais[3] = preferences.getInt("vch4", 100);
+  preferences.end();
 
   // --- CONFIGURAÇÃO DA UART NATIVA (DMX512: 250kbps, 8N2) ---
   uart_config_t uart_config = {
@@ -755,6 +756,7 @@ void acordaTela() {
 }
 
 void salvarConfiguracao() {
+  preferences.begin("mileto_cfg", false);
   preferences.putInt("dmx", enderecoDMX);
   preferences.putInt("modo", modoAtual);
   preferences.putInt("vel", velocidad);
@@ -767,6 +769,7 @@ void salvarConfiguracao() {
   preferences.putInt("vch2", velocidadesCanais[1]);
   preferences.putInt("vch3", velocidadesCanais[2]);
   preferences.putInt("vch4", velocidadesCanais[3]);
+  preferences.end();
 }
 
 void imprimeNumero(int num) {
