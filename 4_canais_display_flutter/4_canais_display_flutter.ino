@@ -469,29 +469,31 @@ void executarEfeitos() {
 
   // --- MODO MANUAL: PISCADA INDEPENDENTE DINÂMICA ---
   if (modoAtual == 0) {
-    static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
-    static boolean estadosCanais[4] = {false, false, false, false};
-    int delaysIndividuais[4];
-
-    for (int i = 0; i < 4; i++) {
-      if (velocidadesCanais[i] >= 100) {
-        // Velocidade máxima para este canal = estático
-        delaysIndividuais[i] = 0;
-        estadosCanais[i] = true;
-      } else {
-        // Mapeia velocidade (0-99) para delay (800ms a 40ms)
-        delaysIndividuais[i] = map(velocidadesCanais[i], 0, 99, 800, 40);
-
-        // Mantém a influência do brilho na velocidade se desejar, ou remove para controle puro
-        // Aqui removemos para o controle ser 100% manual via slider de velocidade
-        if (tempoAtual - ultimosTempos[i] >= (unsigned long)delaysIndividuais[i]) {
-          ultimosTempos[i] = tempoAtual;
-          estadosCanais[i] = !estadosCanais[i];
-        }
+    // Se estiver no modo DMX, ignora as velocidades individuais para controle direto dos dimmers
+    if (sistemaEmModoDMX) {
+      for (int i = 0; i < 4; i++) {
+        writeChannel(i, (brilhoCanais[i] * brilhoGeral) / 255);
       }
+    }
+    else {
+      static unsigned long ultimosTempos[4] = {0, 0, 0, 0};
+      static boolean estadosCanais[4] = {false, false, false, false};
+      int delaysIndividuais[4];
 
-      int nivelBase = (brilhoCanais[i] * brilhoGeral) / 255;
-      writeChannel(i, estadosCanais[i] ? nivelBase : 0);
+      for (int i = 0; i < 4; i++) {
+        if (velocidadesCanais[i] >= 100) {
+          delaysIndividuais[i] = 0;
+          estadosCanais[i] = true;
+        } else {
+          delaysIndividuais[i] = map(velocidadesCanais[i], 0, 99, 800, 40);
+          if (tempoAtual - ultimosTempos[i] >= (unsigned long)delaysIndividuais[i]) {
+            ultimosTempos[i] = tempoAtual;
+            estadosCanais[i] = !estadosCanais[i];
+          }
+        }
+        int nivelBase = (brilhoCanais[i] * brilhoGeral) / 255;
+        writeChannel(i, estadosCanais[i] ? nivelBase : 0);
+      }
     }
     enviarNiveisBT();
     return;
@@ -611,40 +613,43 @@ void processarMesaDMX() {
 
                 velocidad = map(dmxCH5, 0, 255, 0, 100);
 
-                // MAPEAMENTO DMX FINAL (CORRIGIDO):
-                // CH1: Dimmer Saída 1
-                // CH2: Dimmer Saída 2
-                // CH3: Dimmer Saída 3
-                // CH4: Dimmer Saída 4
-                // CH5: Velocidade
-                // CH6: Dimmer Geral + Seletor de Efeitos
+                // MAPEAMENTO DMX FINALIZADO:
+                // CH1: Dimmer Canal 1 (Manual)
+                // CH2: Dimmer Canal 2 (Manual)
+                // CH3: Dimmer Canal 3 (Manual)
+                // CH4: Dimmer Canal 4 (Manual)
+                // CH5: Velocidade (Efeitos)
+                // CH6: Master Dimmer / Seletor de Modo
 
-                // Ranges do CH6:
-                // 000 - 050: MANUAL (CH1-4 ativos, CH6 é Dimmer Geral 0-100%)
-                // 051 - 100: FADE (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
-                // 101 - 150: STROBO (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
-                // 151 - 200: SEQUENCIAL (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
-                // 201 - 255: FIXO (CH1-4 ignorados, CH6 é Dimmer Geral 0-100%)
+                // Faixas do CH6:
+                // 000 - 080: MANUAL (Canais 1-4 Ativos, CH6 é Master Dimmer)
+                // 081 - 120: FADE (Canais 1-4 Ignorados, CH6 é Master Dimmer)
+                // 121 - 160: STROBO (Canais 1-4 Ignorados, CH6 é Master Dimmer)
+                // 161 - 200: SEQUENCIAL (Canais 1-4 Ignorados, CH6 é Master Dimmer)
+                // 201 - 255: FIXO (Canais 1-4 Ignorados, CH6 é Master Dimmer)
 
-                if (dmxCH6 <= 50) {
+                if (dmxCH6 <= 80) {
                   modoAtual = 0; // Manual
-                  brilhoGeral = map(dmxCH6, 0, 50, 0, 255);
+                  brilhoGeral = map(dmxCH6, 0, 80, 0, 255);
                   brilhoCanais[0] = dmxCH1;
                   brilhoCanais[1] = dmxCH2;
                   brilhoCanais[2] = dmxCH3;
                   brilhoCanais[3] = dmxCH4;
-                } else if (dmxCH6 <= 100) {
-                  modoAtual = 1; // Fade
-                  brilhoGeral = map(dmxCH6, 51, 100, 0, 255);
-                } else if (dmxCH6 <= 150) {
-                  modoAtual = 2; // Strobo
-                  brilhoGeral = map(dmxCH6, 101, 150, 0, 255);
-                } else if (dmxCH6 <= 200) {
-                  modoAtual = 3; // Sequencial
-                  brilhoGeral = map(dmxCH6, 151, 200, 0, 255);
                 } else {
-                  modoAtual = 4; // Fixo
-                  brilhoGeral = map(dmxCH6, 201, 255, 0, 255);
+                  // Canais 1-4 são ignorados em modos de efeito
+                  if (dmxCH6 <= 120) {
+                    modoAtual = 1; // Fade
+                    brilhoGeral = map(dmxCH6, 81, 120, 0, 255);
+                  } else if (dmxCH6 <= 160) {
+                    modoAtual = 2; // Strobo
+                    brilhoGeral = map(dmxCH6, 121, 160, 0, 255);
+                  } else if (dmxCH6 <= 200) {
+                    modoAtual = 3; // Sequencial
+                    brilhoGeral = map(dmxCH6, 161, 200, 0, 255);
+                  } else {
+                    modoAtual = 4; // Fixo
+                    brilhoGeral = map(dmxCH6, 201, 255, 0, 255);
+                  }
                 }
                 // acordaTela(); // Não acordar a tela a cada pacote DMX para evitar flickering e lentidão
                 // atualizarDisplay(); // O endereço DMX não muda com os dados, não precisa redesenhar o OLED aqui
