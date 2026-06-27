@@ -42,7 +42,7 @@ BLECharacteristic *pTxCharacteristic;
 String comandoPendente = "";
 bool novoComandoBle = false;
 
-// --- MAPEAMENTO DE PINOS (C3 SUPER MINI) ---
+// --- MAPEAMENTO DE PINOS (ESP32-C3 SUPER MINI) ---
 #define MOSFET_CH1 0
 #define MOSFET_CH2 1
 #define MOSFET_CH3 5
@@ -52,9 +52,9 @@ bool novoComandoBle = false;
 #define BTN_FRENTE      7
 #define BTN_VOLTA      10
 #define BTN_GRAVAR      21
-#define CHAVE_DMX_MANUAL 2
+#define CHAVE_DMX_MANUAL 3
 
-#define LED_STATUS_DMX 8 // Pino do LED de status (C3 Super Mini Onboard ou Externo)
+#define LED_STATUS_DMX 8 // LED de status
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -120,7 +120,6 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) override {
-      // CORREÇÃO: Usando String nativa do Core 3.x para evitar erro de std::string
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
@@ -157,7 +156,7 @@ void setup() {
   desenharLogo(MILETO_LOGO_1);
   delay(3000);
 
-  // Carrega configurações persistentes
+  // Carrega configurações
   preferences.begin("mileto_cfg", false);
   enderecoDMX = preferences.getInt("dmx", 1);
   modoAtual = preferences.getInt("modo", 0);
@@ -171,7 +170,7 @@ void setup() {
   preferences.end();
 
   // --- INICIALIZAÇÃO BLE ---
-  BLEDevice::init("MILETO"); // Nome obrigatório para o App conectar
+  BLEDevice::init("MILETO");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -206,7 +205,6 @@ void loop() {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
-      // Handshake obrigatório para liberar o App Flutter
       pTxCharacteristic->setValue("CONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
@@ -232,7 +230,6 @@ void loop() {
     comandoPendente = "";
   }
 
-  // Botão de Modo
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -253,7 +250,6 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
-  // Navegação no Hardware
   if (!sistemaEmModoDMX) {
     if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis(); acordaTela();
