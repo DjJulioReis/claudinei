@@ -8,12 +8,12 @@
 #include "driver/uart.h"
 #include "soc/soc.h"
 
-// --- BIBLIOTECAS BLE E API ESP-IDF ---
+// --- INCLUSÃO DO BLE PARA ESP32 CORE 3.X ---
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-#include "esp_gap_ble_api.h" // Necessário para definições de segurança no C3
+#include "esp_gap_ble_api.h"
 
 // --- INCLUSÃO DA LOGO ---
 #include "MILETO_LOGO_1.h"
@@ -24,7 +24,7 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 Preferences preferences;
 
-// --- CONFIGURAÇÃO UART DMX512 ---
+// --- CONFIGURAÇÃO UART DMX512 (UART1 no C3) ---
 #define DMX_UART_NUM UART_NUM_1
 #define DMX_RX_PIN 20
 
@@ -33,7 +33,7 @@ uint8_t raw_dmx_buf[515];
 int dmx_idx = 0;
 bool dmx_em_frame = false;
 
-// --- CONFIGURAÇÃO BLE (NORDIC UART) ---
+// --- UUIDs BLE (Nordic UART Service) ---
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -50,17 +50,18 @@ bool novoComandoBle = false;
 #define MOSFET_CH4 4
 
 #define BTN_MUDAR_CAMPO 6
-#define BTN_FRENTE      7
-#define BTN_VOLTA      10
-#define BTN_GRAVAR      21
-#define CHAVE_DMX_MANUAL 3
-
-#define LED_STATUS_DMX 2
+#define BTN_FRENTE 7
+#define BTN_VOLTA 10
+#define BTN_GRAVAR 21
+#define CHAVE_DMX_MANUAL 2
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
 
-// --- VARIÁVEIS DE CONTROLE ---
+#define OLED_SDA 8
+#define OLED_SCL 9
+
+// --- VARIÁVEIS DE ESTADO ---
 enum FasesMenu { FASE_MODO, FASE_CAMPO, FASE_VALOR };
 FasesMenu faseAtual = FASE_MODO;
 
@@ -93,7 +94,7 @@ unsigned long ultimoPacoteDMX = 0;
 bool sinalDMXAtivo = false;
 bool dispositivoConectado = false;
 
-// --- DECLARAÇÕES ---
+// --- FUNÇÕES ---
 void atualizarDisplay();
 void acordaTela();
 void executarEfeitos();
@@ -118,7 +119,7 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
-      String rxValue = pCharacteristic->getValue(); // Em versões novas do core, getValue retorna String
+      String rxValue = pCharacteristic->getValue(); // RESOLVIDO: No Core 3.x agora retorna String
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
         novoComandoBle = true;
@@ -128,14 +129,11 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 class MySecurityCallbacks : public BLESecurityCallbacks {
     uint32_t onPassKeyRequest() { return 123456; }
-    void onPassKeyNotify(uint32_t pass_key) { Serial.printf("Passkey: %d\n", pass_key); }
+    void onPassKeyNotify(uint32_t pass_key) { Serial.printf("PIN: %d\n", pass_key); }
     bool onSecurityRequest() { return true; }
     void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) {
-        if (cmpl.success) {
-            Serial.println("Autenticacao OK!");
-        } else {
-            Serial.println("Falha na Autenticacao.");
-        }
+      if (cmpl.success) Serial.println("Auth OK");
+      else Serial.println("Auth Falhou");
     }
     bool onConfirmPIN(uint32_t pin) { return true; }
 };
@@ -143,45 +141,46 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n   MILETO - FIRMWARE C3 V5.5   ");
 
   pinMode(BTN_MUDAR_CAMPO, INPUT_PULLUP);
   pinMode(BTN_FRENTE, INPUT_PULLUP);
   pinMode(BTN_VOLTA, INPUT_PULLUP);
   pinMode(BTN_GRAVAR, INPUT_PULLUP);
   pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
-  pinMode(LED_STATUS_DMX, OUTPUT);
 
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH3, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH4, PWM_FREQ, PWM_RES);
 
-  Wire.begin(8, 9);
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { Serial.println("OLED ERR"); }
-  oled.setTextColor(SSD1306_WHITE);
+  Wire.begin(OLED_SDA, OLED_SCL);
+  delay(100);
 
+  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED ERR");
+  }
+
+  oled.setTextColor(SSD1306_WHITE);
   desenharLogo(MILETO_LOGO_1);
   delay(3000);
 
-  // Carrega configurações
   preferences.begin("mileto_cfg", false);
   enderecoDMX = preferences.getInt("dmx", 1);
   modoAtual = preferences.getInt("modo", 0);
   velocidad = preferences.getInt("vel", 100);
   brilhoGeral = preferences.getInt("dim", 255);
   for (int i = 0; i < 4; i++) {
-    char kC[6], kV[7]; sprintf(kC, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
-    brilhoCanais[i] = preferences.getInt(kC, 255);
+    char kCh[6], kV[7]; sprintf(kCh, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
+    brilhoCanais[i] = preferences.getInt(kCh, 255);
     velocidadesCanais[i] = preferences.getInt(kV, 100);
   }
   preferences.end();
 
-  // --- INICIALIZAÇÃO BLE ---
-  BLEDevice::init("MILETO_C3");
-
+  // --- CONFIGURAÇÃO BLE ---
+  BLEDevice::init("MILETO"); // Nome para bater com o App original
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
+
   BLEService *pService = pServer->createService(SERVICE_UUID);
   pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
   pTxCharacteristic->addDescriptor(new BLE2902());
@@ -189,7 +188,7 @@ void setup() {
   pRxCharacteristic->setCallbacks(new MyCallbacks());
   pService->start();
 
-  // Configuração de Segurança BLE para Core 3.x
+  // Segurança BLE modernizada para Core 3.x
   BLESecurity *pSecurity = new BLESecurity();
   pSecurity->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
   pSecurity->setCapability(ESP_IO_CAP_OUT);
@@ -199,7 +198,7 @@ void setup() {
 
   pServer->getAdvertising()->start();
 
-  // UART DMX
+  // --- UART DMX ---
   uart_config_t uart_cfg = {
     .baud_rate = 250000, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
     .stop_bits = UART_STOP_BITS_2, .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT
@@ -213,17 +212,22 @@ void setup() {
 }
 
 void loop() {
-  static unsigned long lastFlash = 0;
-  if (sistemaEmModoDMX) {
-    sinalDMXAtivo = (millis() - ultimoPacoteDMX < 1000);
-    if (sinalDMXAtivo && millis() - lastFlash >= 70) {
-      lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX));
-    } else if (!sinalDMXAtivo) digitalWrite(LED_STATUS_DMX, LOW);
-  } else if (!dispositivoConectado) {
-    if (millis() - lastFlash >= 200) { lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX)); }
-  } else digitalWrite(LED_STATUS_DMX, HIGH);
+  static bool ultimoEstadoConexao = false;
+  if (dispositivoConectado != ultimoEstadoConexao) {
+    ultimoEstadoConexao = dispositivoConectado;
+    acordaTela();
+    if (dispositivoConectado) {
+      pTxCharacteristic->setValue("CONNECTED_OK\n");
+      pTxCharacteristic->notify();
+    }
+    atualizarDisplay();
+  }
 
-  if (novoComandoBle) { processarBluetooth(); novoComandoBle = false; }
+  if (novoComandoBle) {
+    processarBluetooth();
+    novoComandoBle = false;
+    comandoPendente = "";
+  }
 
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
@@ -257,18 +261,28 @@ void loop() {
       if (faseAtual == FASE_MODO) modoAtual = (modoAtual + 1) % 5;
       else if (faseAtual == FASE_CAMPO) linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
       else if (faseAtual == FASE_VALOR) {
-        if (linhaSelecionada == 1) { if (modoAtual == 0) canalSelecionado = (canalSelecionado + 1) % 4; else velocidad = min(velocidad + 5, 100); }
-        else if (linhaSelecionada == 2) { if (modoAtual == 0) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255); else brilhoGeral = min(brilhoGeral + 15, 255); }
+        if (linhaSelecionada == 1) {
+          if (modoAtual == 0) canalSelecionado = (canalSelecionado + 1) % 4;
+          else velocidad = min(velocidad + 5, 100);
+        } else if (linhaSelecionada == 2) {
+          if (modoAtual == 0) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255);
+          else brilhoGeral = min(brilhoGeral + 15, 255);
+        }
       }
       atualizarDisplay();
     }
     if (digitalRead(BTN_VOLTA) == LOW && millis() - ultimoDebounce >= 150) {
       ultimoDebounce = millis(); acordaTela();
-      if (faseAtual == FASE_MODO) modoAtual = (modoAtual > 0) ? modoAtual - 1 : 4;
+      if (faseAtual == FASE_MODO) modoAtual = (modoAtual <= 0) ? 4 : modoAtual - 1;
       else if (faseAtual == FASE_CAMPO) linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
       else if (faseAtual == FASE_VALOR) {
-        if (linhaSelecionada == 1) { if (modoAtual == 0) canalSelecionado = (canalSelecionado > 0) ? canalSelecionado - 1 : 3; else velocidad = max(velocidad - 5, 0); }
-        else if (linhaSelecionada == 2) { if (modoAtual == 0) brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0); else brilhoGeral = max(brilhoGeral - 15, 0); }
+        if (linhaSelecionada == 1) {
+          if (modoAtual == 0) canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
+          else velocidad = max(velocidad - 5, 0);
+        } else if (linhaSelecionada == 2) {
+          if (modoAtual == 0) brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
+          else brilhoGeral = max(brilhoGeral - 15, 0);
+        }
       }
       atualizarDisplay();
     }
@@ -404,9 +418,11 @@ void processarMesaDMX() {
 
 void processarBluetooth() {
   acordaTela();
+  comandoPendente.replace("\n", ""); comandoPendente.replace("\r", ""); comandoPendente.trim();
   int div = comandoPendente.indexOf(':'); if (div == -1) return;
   String cmd = comandoPendente.substring(0, div); String val = comandoPendente.substring(div + 1);
   int iv = val.toInt();
+  if (cmd == "GET_CAPABILITIES") { pTxCharacteristic->setValue("CAPS:MANUAL,FADE,STROBO,SEQUENC,FIXO\n"); pTxCharacteristic->notify(); return; }
   if (cmd == "SET_CH1") brilhoCanais[0] = map(iv, 0, 100, 0, 255);
   else if (cmd == "SET_CH2") brilhoCanais[1] = map(iv, 0, 100, 0, 255);
   else if (cmd == "SET_CH3") brilhoCanais[2] = map(iv, 0, 100, 0, 255);
@@ -415,15 +431,12 @@ void processarBluetooth() {
   else if (cmd == "SET_VCH2") velocidadesCanais[1] = iv;
   else if (cmd == "SET_VCH3") velocidadesCanais[2] = iv;
   else if (cmd == "SET_VCH4") velocidadesCanais[3] = iv;
-  else if (cmd == "SET_MODO") { modoAtual = iv; if (modoAtual > 4) modoAtual = 4; }
-  else if (cmd == "SET_VEL") { velocidad = iv; if (velocidad > 100) velocidad = 100; }
-  else if (cmd == "SET_DIM") brilhoGeral = map(iv, 0, 100, 0, 255);
-  else if (cmd == "GRAVAR") { exibirTelaSalvando(); salvarConfiguracao(); delay(1000); }
-  else if (cmd == "CHAVE_MODO") sistemaEmModoDMX = (val == "DMX");
-  else if (cmd == "GET_CAPABILITIES") {
-    String c = "CAPS:MANUAL,FADE,STROBO,SEQUENC,FIXO\n";
-    pTxCharacteristic->setValue(c.c_str()); pTxCharacteristic->notify();
-  }
+  else if (cmd == "SET_MODO") { modoAtual = min(iv, 4); }
+  else if (cmd == "SET_VEL") { velocidad = min(iv, 100); }
+  else if (cmd == "SET_DIM") { brilhoGeral = map(iv, 0, 100, 0, 255); }
+  else if (cmd == "SET_DMX") { enderecoDMX = iv; }
+  else if (cmd == "CHAVE_MODO") { sistemaEmModoDMX = (val == "DMX"); }
+  else if (cmd == "GRAVAR") { exibirTelaSalvando(); salvarConfiguracao(); pTxCharacteristic->setValue("GRAVAR:OK\n"); pTxCharacteristic->notify(); delay(1000); }
   atualizarDisplay();
 }
 
@@ -433,10 +446,7 @@ void salvarConfiguracao() {
   preferences.begin("mileto_cfg", false);
   preferences.putInt("dmx", enderecoDMX); preferences.putInt("modo", modoAtual);
   preferences.putInt("vel", velocidad); preferences.putInt("dim", brilhoGeral);
-  for (int i = 0; i < 4; i++) {
-    char kC[6], kV[7]; sprintf(kC,"ch%d",i+1); sprintf(kV,"vch%d",i+1);
-    preferences.putInt(kC, brilhoCanais[i]); preferences.putInt(kV, velocidadesCanais[i]);
-  }
+  for (int i = 0; i < 4; i++) { char kC[6], kV[7]; sprintf(kC,"ch%d",i+1); sprintf(kV,"vch%d",i+1); preferences.putInt(kC, brilhoCanais[i]); preferences.putInt(kV, velocidadesCanais[i]); }
   preferences.end();
 }
 
@@ -446,26 +456,24 @@ void atualizarDisplay() {
   if (sistemaEmModoDMX) {
     oled.setCursor(0, 0); oled.print("MESA DMX: 7 CHs");
     oled.setCursor(0, 15); oled.print("STATUS: "); oled.print(sinalDMXAtivo ? "OK" : "OFF");
-    int porcDmx = map(brilhoGeral, 0, 255, 0, 100);
+    int porc = map(brilhoGeral, 0, 255, 0, 100);
     oled.setCursor(0, 30); oled.print("Brilho Geral");
-    oled.setCursor(0, 42); for (int i = 0; i < 12; i++) oled.print(i < (porcDmx * 12) / 100 ? (char)219 : (char)176);
+    oled.setCursor(0, 42); for (int i = 0; i < 12; i++) oled.print(i < (porc * 12) / 100 ? (char)219 : (char)176);
     oled.setCursor(85, 48); oled.setTextSize(2); oled.print(enderecoDMX);
   } else {
-    int val = (modoAtual == 0) ? brilhoCanais[canalSelecionado] : brilhoGeral;
-    int porc = map(val, 0, 255, 0, 100);
+    int v = (modoAtual == 0) ? brilhoCanais[canalSelecionado] : brilhoGeral;
+    int p = map(v, 0, 255, 0, 100);
     oled.setCursor(0, 0); oled.print(dispositivoConectado ? "* APP ATIVO *" : "--- MANUAL ---");
-    oled.setCursor(0, 12); oled.print((modoAtual == 0) ? "Brilho CH" : "Brilho ");
-    if(modoAtual == 0) oled.print(canalSelecionado + 1); else oled.print(nomesEfeitos[modoAtual]);
-    oled.setCursor(0, 26); for (int i = 0; i < 12; i++) oled.print(i < (porc * 12) / 100 ? (char)219 : (char)176);
-    oled.setCursor(0, 44); oled.setTextSize(2); oled.print(porc); oled.print("%");
-    if (faseAtual == FASE_VALOR) { oled.setTextSize(1); oled.setCursor(110, 48); oled.print("[*]"); }
+    oled.setCursor(0, 12); oled.print((modoAtual == 0) ? "Brilho CH" : "Brilho "); if(modoAtual == 0) oled.print(canalSelecionado + 1); else oled.print(nomesEfeitos[modoAtual]);
+    oled.setCursor(0, 26); for (int i = 0; i < 12; i++) oled.print(i < (p * 12) / 100 ? (char)219 : (char)176);
+    oled.setCursor(0, 44); oled.setTextSize(2); oled.print(p); oled.print("%");
+    if (faseAtual == FASE_VALOR) { oled.setCursor(110, 48); oled.setTextSize(1); oled.print("[*]"); }
   }
   oled.display();
 }
 
 void exibirTelaSalvando() {
-  oled.clearDisplay(); oled.setCursor(0, 0); oled.setTextSize(1);
-  oled.print("Salvando\nGravando...\n\n");
+  oled.clearDisplay(); oled.setCursor(0, 0); oled.setTextSize(1); oled.print("Salvando\nGravando...\n\n");
   for (int i = 0; i < 12; i++) oled.print((char)219);
   oled.setCursor(0, 44); oled.setTextSize(2); oled.print("OK"); oled.display();
 }
