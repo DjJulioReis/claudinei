@@ -8,12 +8,11 @@
 #include "driver/uart.h"
 #include "soc/soc.h"
 
-// --- INCLUSÃO DO BLE PARA ESP32 CORE 3.X ---
+// --- BIBLIOTECAS BLE PARA ESP32 CORE 3.X ---
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-#include "esp_gap_ble_api.h"
 
 // --- INCLUSÃO DA LOGO ---
 #include "MILETO_LOGO_1.h"
@@ -50,10 +49,12 @@ bool novoComandoBle = false;
 #define MOSFET_CH4 4
 
 #define BTN_MUDAR_CAMPO 6
-#define BTN_FRENTE 7
-#define BTN_VOLTA 10
-#define BTN_GRAVAR 21
+#define BTN_FRENTE      7
+#define BTN_VOLTA      10
+#define BTN_GRAVAR      21
 #define CHAVE_DMX_MANUAL 2
+
+#define LED_STATUS_DMX 8 // Pino do LED de status (C3 Super Mini Onboard ou Externo)
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -108,18 +109,19 @@ void exibirTelaSalvando();
 
 // --- CALLBACKS BLE ---
 class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
+    void onConnect(BLEServer* pServer) override {
       dispositivoConectado = true;
     };
-    void onDisconnect(BLEServer* pServer) {
+    void onDisconnect(BLEServer* pServer) override {
       dispositivoConectado = false;
       BLEDevice::startAdvertising();
     }
 };
 
 class MyCallbacks: public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      String rxValue = pCharacteristic->getValue(); // RESOLVIDO: No Core 3.x agora retorna String
+    void onWrite(BLECharacteristic *pCharacteristic) override {
+      // CORREÇÃO: Usando String nativa do Core 3.x para evitar erro de std::string
+      String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
         novoComandoBle = true;
@@ -127,18 +129,8 @@ class MyCallbacks: public BLECharacteristicCallbacks {
     }
 };
 
-class MySecurityCallbacks : public BLESecurityCallbacks {
-    uint32_t onPassKeyRequest() { return 123456; }
-    void onPassKeyNotify(uint32_t pass_key) { Serial.printf("PIN: %d\n", pass_key); }
-    bool onSecurityRequest() { return true; }
-    void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) {
-      if (cmpl.success) Serial.println("Auth OK");
-      else Serial.println("Auth Falhou");
-    }
-    bool onConfirmPIN(uint32_t pin) { return true; }
-};
-
 void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
   delay(1000);
 
@@ -147,6 +139,7 @@ void setup() {
   pinMode(BTN_VOLTA, INPUT_PULLUP);
   pinMode(BTN_GRAVAR, INPUT_PULLUP);
   pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
+  pinMode(LED_STATUS_DMX, OUTPUT);
 
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
@@ -164,6 +157,7 @@ void setup() {
   desenharLogo(MILETO_LOGO_1);
   delay(3000);
 
+  // Carrega configurações persistentes
   preferences.begin("mileto_cfg", false);
   enderecoDMX = preferences.getInt("dmx", 1);
   modoAtual = preferences.getInt("modo", 0);
@@ -176,8 +170,8 @@ void setup() {
   }
   preferences.end();
 
-  // --- CONFIGURAÇÃO BLE ---
-  BLEDevice::init("MILETO"); // Nome para bater com o App original
+  // --- INICIALIZAÇÃO BLE ---
+  BLEDevice::init("MILETO"); // Nome obrigatório para o App conectar
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -188,15 +182,10 @@ void setup() {
   pRxCharacteristic->setCallbacks(new MyCallbacks());
   pService->start();
 
-  // Segurança BLE modernizada para Core 3.x
-  BLESecurity *pSecurity = new BLESecurity();
-  pSecurity->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
-  pSecurity->setCapability(ESP_IO_CAP_OUT);
-  pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
-  pSecurity->setStaticPIN(123456);
-  BLEDevice::setSecurityCallbacks(new MySecurityCallbacks());
-
-  pServer->getAdvertising()->start();
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->start();
 
   // --- UART DMX ---
   uart_config_t uart_cfg = {
@@ -217,11 +206,25 @@ void loop() {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
+      // Handshake obrigatório para liberar o App Flutter
       pTxCharacteristic->setValue("CONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
     atualizarDisplay();
   }
+
+  // Pisca LED de Status
+  static unsigned long lastFlash = 0;
+  if (sistemaEmModoDMX) {
+    sinalDMXAtivo = (millis() - ultimoPacoteDMX < 1000);
+    if (sinalDMXAtivo && (millis() - lastFlash >= 70)) {
+      lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX));
+    } else if (!sinalDMXAtivo) digitalWrite(LED_STATUS_DMX, LOW);
+  } else if (!dispositivoConectado) {
+    if (millis() - lastFlash >= 200) {
+      lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX));
+    }
+  } else digitalWrite(LED_STATUS_DMX, HIGH);
 
   if (novoComandoBle) {
     processarBluetooth();
@@ -229,6 +232,7 @@ void loop() {
     comandoPendente = "";
   }
 
+  // Botão de Modo
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -249,6 +253,7 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
+  // Navegação no Hardware
   if (!sistemaEmModoDMX) {
     if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis(); acordaTela();
@@ -316,7 +321,13 @@ void loop() {
 }
 
 void desenharLogo(const uint8_t* bitmap) {
-  oled.clearDisplay(); oled.drawBitmap(0, 0, bitmap, 128, 64, SSD1306_WHITE); oled.display();
+  oled.clearDisplay();
+  uint8_t *buffer = oled.getBuffer();
+  // Copia PROGMEM diretamente para o buffer (formato vertical de páginas nativo do chip SSD1306)
+  for (int i = 0; i < 1024; i++) {
+    buffer[i] = pgm_read_byte(&bitmap[i]);
+  }
+  oled.display();
 }
 
 void writeChannel(int ch, int val) {
@@ -436,6 +447,7 @@ void processarBluetooth() {
   else if (cmd == "SET_DIM") { brilhoGeral = map(iv, 0, 100, 0, 255); }
   else if (cmd == "SET_DMX") { enderecoDMX = iv; }
   else if (cmd == "CHAVE_MODO") { sistemaEmModoDMX = (val == "DMX"); }
+  else if (cmd == "EFEITO_PISTA") { if(val=="START") modoAtual=3; else modoAtual=0; }
   else if (cmd == "GRAVAR") { exibirTelaSalvando(); salvarConfiguracao(); pTxCharacteristic->setValue("GRAVAR:OK\n"); pTxCharacteristic->notify(); delay(1000); }
   atualizarDisplay();
 }
