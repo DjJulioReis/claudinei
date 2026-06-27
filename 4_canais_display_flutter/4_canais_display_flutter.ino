@@ -42,19 +42,17 @@ BLECharacteristic *pTxCharacteristic;
 String comandoPendente = "";
 bool novoComandoBle = false;
 
-// --- MAPEAMENTO DE PINOS (ESP32-C3 SUPER MINI) ---
+// --- MAPEAMENTO DE PINOS (C3 SUPER MINI - DEFINITIVO) ---
 #define MOSFET_CH1 0
 #define MOSFET_CH2 1
 #define MOSFET_CH3 5
 #define MOSFET_CH4 4
 
 #define BTN_MUDAR_CAMPO 6
-#define BTN_FRENTE      7
-#define BTN_VOLTA      10
-#define BTN_GRAVAR      21
+#define BTN_FRENTE 7
+#define BTN_VOLTA 10
+#define BTN_GRAVAR 21
 #define CHAVE_DMX_MANUAL 3
-
-#define LED_STATUS_DMX 8 // LED de status
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -138,7 +136,6 @@ void setup() {
   pinMode(BTN_VOLTA, INPUT_PULLUP);
   pinMode(BTN_GRAVAR, INPUT_PULLUP);
   pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
-  pinMode(LED_STATUS_DMX, OUTPUT);
 
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
@@ -156,7 +153,6 @@ void setup() {
   desenharLogo(MILETO_LOGO_1);
   delay(3000);
 
-  // Carrega configurações
   preferences.begin("mileto_cfg", false);
   enderecoDMX = preferences.getInt("dmx", 1);
   modoAtual = preferences.getInt("modo", 0);
@@ -169,7 +165,7 @@ void setup() {
   }
   preferences.end();
 
-  // --- INICIALIZAÇÃO BLE ---
+  // --- CONFIGURAÇÃO BLE ---
   BLEDevice::init("MILETO");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -205,24 +201,12 @@ void loop() {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
+      // Handshake obrigatório para liberar o App Flutter
       pTxCharacteristic->setValue("CONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
     atualizarDisplay();
   }
-
-  // Pisca LED de Status
-  static unsigned long lastFlash = 0;
-  if (sistemaEmModoDMX) {
-    sinalDMXAtivo = (millis() - ultimoPacoteDMX < 1000);
-    if (sinalDMXAtivo && (millis() - lastFlash >= 70)) {
-      lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX));
-    } else if (!sinalDMXAtivo) digitalWrite(LED_STATUS_DMX, LOW);
-  } else if (!dispositivoConectado) {
-    if (millis() - lastFlash >= 200) {
-      lastFlash = millis(); digitalWrite(LED_STATUS_DMX, !digitalRead(LED_STATUS_DMX));
-    }
-  } else digitalWrite(LED_STATUS_DMX, HIGH);
 
   if (novoComandoBle) {
     processarBluetooth();
@@ -230,6 +214,7 @@ void loop() {
     comandoPendente = "";
   }
 
+  // Alternador DMX/Manual
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -250,6 +235,7 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
+  // Menu Manual
   if (!sistemaEmModoDMX) {
     if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis(); acordaTela();
@@ -264,7 +250,7 @@ void loop() {
       else if (faseAtual == FASE_VALOR) {
         if (linhaSelecionada == 1) {
           if (modoAtual == 0) canalSelecionado = (canalSelecionado + 1) % 4;
-          else velocidad = min(velocidad + 5, 100);
+          else { velocidad = min(velocidad + 5, 100); }
         } else if (linhaSelecionada == 2) {
           if (modoAtual == 0) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255);
           else brilhoGeral = min(brilhoGeral + 15, 255);
@@ -279,7 +265,7 @@ void loop() {
       else if (faseAtual == FASE_VALOR) {
         if (linhaSelecionada == 1) {
           if (modoAtual == 0) canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
-          else velocidad = max(velocidad - 5, 0);
+          else { velocidad = max(velocidad - 5, 0); }
         } else if (linhaSelecionada == 2) {
           if (modoAtual == 0) brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
           else brilhoGeral = max(brilhoGeral - 15, 0);
@@ -298,6 +284,7 @@ void loop() {
       atualizarDisplay();
     }
   } else {
+    // Menu DMX
     if (digitalRead(BTN_FRENTE) == LOW && millis() - ultimoDebounce >= 150) {
       ultimoDebounce = millis(); acordaTela(); enderecoDMX = (enderecoDMX % 512) + 1; atualizarDisplay();
     }
