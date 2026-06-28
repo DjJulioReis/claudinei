@@ -201,7 +201,6 @@ void loop() {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
-      // Handshake obrigatório para liberar o App Flutter
       pTxCharacteristic->setValue("CONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
@@ -214,7 +213,6 @@ void loop() {
     comandoPendente = "";
   }
 
-  // Alternador DMX/Manual
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -235,7 +233,6 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
-  // Menu Manual
   if (!sistemaEmModoDMX) {
     if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis(); acordaTela();
@@ -284,7 +281,6 @@ void loop() {
       atualizarDisplay();
     }
   } else {
-    // Menu DMX
     if (digitalRead(BTN_FRENTE) == LOW && millis() - ultimoDebounce >= 150) {
       ultimoDebounce = millis(); acordaTela(); enderecoDMX = (enderecoDMX % 512) + 1; atualizarDisplay();
     }
