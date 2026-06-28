@@ -118,6 +118,7 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) override {
+      // CORREÇÃO: Usando String nativa do Core 3.x para evitar erro de std::string
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
@@ -153,6 +154,7 @@ void setup() {
   desenharLogo(MILETO_LOGO_1);
   delay(3000);
 
+  // Carrega configurações persistentes
   preferences.begin("mileto_cfg", false);
   enderecoDMX = preferences.getInt("dmx", 1);
   modoAtual = preferences.getInt("modo", 0);
@@ -166,7 +168,7 @@ void setup() {
   preferences.end();
 
   // --- CONFIGURAÇÃO BLE ---
-  BLEDevice::init("MILETO");
+  BLEDevice::init("MILETO"); // Nome obrigatório para o App conectar
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -201,6 +203,7 @@ void loop() {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
+      // Handshake obrigatório para liberar o App Flutter
       pTxCharacteristic->setValue("CONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
@@ -213,6 +216,7 @@ void loop() {
     comandoPendente = "";
   }
 
+  // Botão de Modo
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -233,6 +237,7 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
+  // Navegação no Hardware
   if (!sistemaEmModoDMX) {
     if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis(); acordaTela();
@@ -262,7 +267,7 @@ void loop() {
       else if (faseAtual == FASE_VALOR) {
         if (linhaSelecionada == 1) {
           if (modoAtual == 0) canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
-          else { velocidad = max(velocidad - 5, 0); }
+          else velocidad = max(velocidad - 5, 0);
         } else if (linhaSelecionada == 2) {
           if (modoAtual == 0) brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
           else brilhoGeral = max(brilhoGeral - 15, 0);
