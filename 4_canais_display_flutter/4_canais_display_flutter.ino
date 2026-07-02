@@ -112,12 +112,12 @@ void lidarComEncoder();
 
 // --- CALLBACKS BLE ---
 class MyServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
       dispositivoConectado = true;
       autenticado = false;
       desafioHandshake = random(1000, 9999);
     };
-    void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
       dispositivoConectado = false;
       autenticado = false;
       NimBLEDevice::startAdvertising();
@@ -125,7 +125,7 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
 };
 
 class MyCallbacks: public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic, ble_gap_conn_desc* desc) override {
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
