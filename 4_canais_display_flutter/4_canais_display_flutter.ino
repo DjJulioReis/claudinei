@@ -268,7 +268,9 @@ void lidarComEncoder() {
         else modoAtual = (modoAtual <= 0) ? 4 : modoAtual - 1;
       }
       else if (faseAtual == FASE_CAMPO) {
-        linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
+        int maxLinhas = (modoAtual == 0) ? 3 : 2;
+        if (subindo) linhaSelecionada = (linhaSelecionada % maxLinhas) + 1;
+        else linhaSelecionada = (linhaSelecionada <= 1) ? maxLinhas : linhaSelecionada - 1;
       }
       else if (faseAtual == FASE_VALOR) {
         if (linhaSelecionada == 1) {
@@ -287,6 +289,9 @@ void lidarComEncoder() {
             if (subindo) brilhoGeral = min(brilhoGeral + 15, 255);
             else brilhoGeral = max(brilhoGeral - 15, 0);
           }
+        } else if (linhaSelecionada == 3 && modoAtual == 0) {
+          if (subindo) velocidadesCanais[canalSelecionado] = min(velocidadesCanais[canalSelecionado] + 5, 100);
+          else velocidadesCanais[canalSelecionado] = max(velocidadesCanais[canalSelecionado] - 5, 0);
         }
       }
     } else {
@@ -474,12 +479,29 @@ void atualizarDisplay() {
     oled.setCursor(0, 42); for (int i = 0; i < 12; i++) oled.print(i < (porc * 12) / 100 ? (char)219 : (char)176);
     oled.setCursor(85, 48); oled.setTextSize(2); oled.print(enderecoDMX);
   } else {
-    int v = (modoAtual == 0) ? brilhoCanais[canalSelecionado] : brilhoGeral;
-    int p = map(v, 0, 255, 0, 100);
     oled.setCursor(0, 0); oled.print(dispositivoConectado ? "* APP ATIVO *" : "--- MANUAL ---");
-    oled.setCursor(0, 12); oled.print((modoAtual == 0) ? "Brilho CH" : "Brilho "); if(modoAtual == 0) oled.print(canalSelecionado + 1); else oled.print(nomesEfeitos[modoAtual]);
-    oled.setCursor(0, 26); for (int i = 0; i < 12; i++) oled.print(i < (p * 12) / 100 ? (char)219 : (char)176);
-    oled.setCursor(0, 44); oled.setTextSize(2); oled.print(p); oled.print("%");
+    if (modoAtual == 0) {
+      oled.setCursor(0, 10); oled.print("CH:"); oled.print(canalSelecionado + 1);
+      if(faseAtual != FASE_MODO && linhaSelecionada == 1) oled.print(" <");
+
+      int b = map(brilhoCanais[canalSelecionado], 0, 255, 0, 100);
+      oled.setCursor(0, 20); oled.print("B:"); oled.print(b); oled.print("%");
+      if(faseAtual != FASE_MODO && linhaSelecionada == 2) oled.print(" <");
+      oled.setCursor(50, 20); for (int i = 0; i < 10; i++) oled.print(i < (b * 10) / 100 ? (char)219 : (char)176);
+
+      int s = velocidadesCanais[canalSelecionado];
+      oled.setCursor(0, 30); oled.print("V:"); oled.print(s); oled.print("%");
+      if(faseAtual != FASE_MODO && linhaSelecionada == 3) oled.print(" <");
+      oled.setCursor(50, 30); for (int i = 0; i < 10; i++) oled.print(i < (s * 10) / 100 ? (char)219 : (char)176);
+
+      oled.setCursor(0, 45); oled.print("MODO: "); oled.print(nomesEfeitos[modoAtual]);
+    } else {
+      int p = map(brilhoGeral, 0, 255, 0, 100);
+      oled.setCursor(0, 12); oled.print("Efeito: "); oled.print(nomesEfeitos[modoAtual]);
+      if(faseAtual != FASE_MODO && linhaSelecionada == 1) oled.print(" <");
+      oled.setCursor(0, 26); for (int i = 0; i < 12; i++) oled.print(i < (p * 12) / 100 ? (char)219 : (char)176);
+      oled.setCursor(0, 44); oled.setTextSize(2); oled.print(p); oled.print("%");
+    }
     if (faseAtual == FASE_VALOR) { oled.setCursor(110, 48); oled.setTextSize(1); oled.print("[*]"); }
   }
   oled.display();
