@@ -137,13 +137,13 @@ class MyCallbacks: public NimBLECharacteristicCallbacks {
 };
 
 void setup() {
+  Serial.begin(115200);
+  Serial.println("MILETO START");
 #ifdef RTC_CNTL_BROWN_OUT_REG
-  // Desativa reset por Brownout no C3
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 #endif
-  Serial.begin(115200);
   randomSeed(micros());
-  delay(2000); // Aguarda estabilização da fonte
+  delay(1000);
 
   // Configuração do Encoder
   pinMode(ENC_CLK, INPUT_PULLUP);
@@ -184,8 +184,7 @@ void setup() {
 
   // --- CONFIGURAÇÃO BLE (NIMBLE) ---
   NimBLEDevice::init("MILETO");
-  // Reduz potência TX agressivamente para evitar Brownout
-  NimBLEDevice::setPower(ESP_PWR_LVL_N9);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P3);
 
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -198,6 +197,7 @@ void setup() {
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setName("MILETO");
   pAdvertising->start();
 
   // --- UART DMX ---
