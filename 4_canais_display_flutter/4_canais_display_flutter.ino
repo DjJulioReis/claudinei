@@ -23,7 +23,7 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 Preferences preferences;
 
-// --- CONFIGURAÇÃO UART DMX512 (UART1 no C3) ---
+// --- CONFIGURAÇÃO UART DMX512 ---
 #define DMX_UART_NUM UART_NUM_1
 #define DMX_RX_PIN 20
 
@@ -42,17 +42,18 @@ BLECharacteristic *pTxCharacteristic;
 String comandoPendente = "";
 bool novoComandoBle = false;
 
-// --- MAPEAMENTO DE PINOS (C3 SUPER MINI - DEFINITIVO) ---
+// --- MAPEAMENTO DE PINOS (C3 SUPER MINI) ---
+// MOSFETs (PWM)
 #define MOSFET_CH1 0
 #define MOSFET_CH2 1
 #define MOSFET_CH3 5
 #define MOSFET_CH4 4
 
-#define BTN_MUDAR_CAMPO 6
-#define BTN_FRENTE 7
-#define BTN_VOLTA 10
-#define BTN_GRAVAR 21
-#define CHAVE_DMX_MANUAL 3
+// --- NOVO SISTEMA: ENCODER ROTATIVO ---
+#define ENC_CLK 6    // Clock do Encoder
+#define ENC_DT  7    // Data do Encoder
+#define ENC_SW  10   // Botão de Confirmação (Click)
+#define CHAVE_DMX_MANUAL 3  // Botão separado para alternar modo
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -93,6 +94,9 @@ unsigned long ultimoPacoteDMX = 0;
 bool sinalDMXAtivo = false;
 bool dispositivoConectado = false;
 
+// --- VARIÁVEIS DO ENCODER ---
+int lastClkState;
+
 // --- FUNÇÕES ---
 void atualizarDisplay();
 void acordaTela();
@@ -104,6 +108,7 @@ void salvarConfiguracao();
 void desenharLogo(const uint8_t* bitmap);
 void processarBluetooth();
 void exibirTelaSalvando();
+void lidarComEncoder();
 
 // --- CALLBACKS BLE ---
 class MyServerCallbacks: public BLEServerCallbacks {
@@ -118,7 +123,6 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) override {
-      // CORREÇÃO: Usando String nativa do Core 3.x para evitar erro de std::string
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
@@ -132,11 +136,13 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  pinMode(BTN_MUDAR_CAMPO, INPUT_PULLUP);
-  pinMode(BTN_FRENTE, INPUT_PULLUP);
-  pinMode(BTN_VOLTA, INPUT_PULLUP);
-  pinMode(BTN_GRAVAR, INPUT_PULLUP);
+  // Configuração do Encoder
+  pinMode(ENC_CLK, INPUT_PULLUP);
+  pinMode(ENC_DT, INPUT_PULLUP);
+  pinMode(ENC_SW, INPUT_PULLUP);
   pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
+
+  lastClkState = digitalRead(ENC_CLK);
 
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
@@ -168,7 +174,7 @@ void setup() {
   preferences.end();
 
   // --- CONFIGURAÇÃO BLE ---
-  BLEDevice::init("MILETO"); // Nome obrigatório para o App conectar
+  BLEDevice::init("MILETO");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -198,13 +204,15 @@ void setup() {
 }
 
 void loop() {
+  // Handshake e Segurança MILETO
   static bool ultimoEstadoConexao = false;
   if (dispositivoConectado != ultimoEstadoConexao) {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
-      // Handshake obrigatório para liberar o App Flutter
-      pTxCharacteristic->setValue("CONNECTED_OK\n");
+      // --- AUTENTICAÇÃO PRODUTO MILETO ---
+      // O App agora espera este código para liberar o uso
+      pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n");
       pTxCharacteristic->notify();
     }
     atualizarDisplay();
@@ -216,7 +224,10 @@ void loop() {
     comandoPendente = "";
   }
 
-  // Botão de Modo
+  // Lidar com o Encoder Rotativo
+  lidarComEncoder();
+
+  // Troca de Modo DMX/Manual via Botão
   if (digitalRead(CHAVE_DMX_MANUAL) == LOW && millis() - ultimoDebounce >= 250) {
     ultimoDebounce = millis(); acordaTela();
     sistemaEmModoDMX = !sistemaEmModoDMX;
@@ -237,66 +248,6 @@ void loop() {
     while (digitalRead(CHAVE_DMX_MANUAL) == LOW) delay(10);
   }
 
-  // Navegação no Hardware
-  if (!sistemaEmModoDMX) {
-    if (digitalRead(BTN_MUDAR_CAMPO) == LOW && millis() - ultimoDebounce >= 250) {
-      ultimoDebounce = millis(); acordaTela();
-      if (faseAtual == FASE_CAMPO) { faseAtual = FASE_MODO; linhaSelecionada = 0; }
-      else if (faseAtual == FASE_VALOR) faseAtual = FASE_CAMPO;
-      atualizarDisplay();
-    }
-    if (digitalRead(BTN_FRENTE) == LOW && millis() - ultimoDebounce >= 150) {
-      ultimoDebounce = millis(); acordaTela();
-      if (faseAtual == FASE_MODO) modoAtual = (modoAtual + 1) % 5;
-      else if (faseAtual == FASE_CAMPO) linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
-      else if (faseAtual == FASE_VALOR) {
-        if (linhaSelecionada == 1) {
-          if (modoAtual == 0) canalSelecionado = (canalSelecionado + 1) % 4;
-          else { velocidad = min(velocidad + 5, 100); }
-        } else if (linhaSelecionada == 2) {
-          if (modoAtual == 0) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255);
-          else brilhoGeral = min(brilhoGeral + 15, 255);
-        }
-      }
-      atualizarDisplay();
-    }
-    if (digitalRead(BTN_VOLTA) == LOW && millis() - ultimoDebounce >= 150) {
-      ultimoDebounce = millis(); acordaTela();
-      if (faseAtual == FASE_MODO) modoAtual = (modoAtual <= 0) ? 4 : modoAtual - 1;
-      else if (faseAtual == FASE_CAMPO) linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
-      else if (faseAtual == FASE_VALOR) {
-        if (linhaSelecionada == 1) {
-          if (modoAtual == 0) canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
-          else velocidad = max(velocidad - 5, 0);
-        } else if (linhaSelecionada == 2) {
-          if (modoAtual == 0) brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
-          else brilhoGeral = max(brilhoGeral - 15, 0);
-        }
-      }
-      atualizarDisplay();
-    }
-    if (digitalRead(BTN_GRAVAR) == LOW && millis() - ultimoDebounce >= 250) {
-      ultimoDebounce = millis(); acordaTela();
-      if (faseAtual == FASE_MODO) { faseAtual = FASE_CAMPO; linhaSelecionada = 1; }
-      else if (faseAtual == FASE_CAMPO) faseAtual = FASE_VALOR;
-      else if (faseAtual == FASE_VALOR) {
-        exibirTelaSalvando(); salvarConfiguracao(); delay(1000);
-        faseAtual = FASE_MODO; linhaSelecionada = 0;
-      }
-      atualizarDisplay();
-    }
-  } else {
-    if (digitalRead(BTN_FRENTE) == LOW && millis() - ultimoDebounce >= 150) {
-      ultimoDebounce = millis(); acordaTela(); enderecoDMX = (enderecoDMX % 512) + 1; atualizarDisplay();
-    }
-    if (digitalRead(BTN_VOLTA) == LOW && millis() - ultimoDebounce >= 150) {
-      ultimoDebounce = millis(); acordaTela(); enderecoDMX = (enderecoDMX <= 1) ? 512 : enderecoDMX - 1; atualizarDisplay();
-    }
-    if (digitalRead(BTN_GRAVAR) == LOW && millis() - ultimoDebounce >= 250) {
-      ultimoDebounce = millis(); acordaTela(); exibirTelaSalvando(); salvarConfiguracao(); delay(1000); atualizarDisplay();
-    }
-  }
-
   if (telaAcesa && (millis() - tempoUltimaAtividade >= TEMPO_SLEEP_TELA)) {
     oled.clearDisplay(); oled.display(); oled.ssd1306_command(SSD1306_DISPLAYOFF); telaAcesa = false;
   }
@@ -304,10 +255,77 @@ void loop() {
   executarEfeitos();
 }
 
+void lidarComEncoder() {
+  int currentClkState = digitalRead(ENC_CLK);
+
+  // Detecta Rotação
+  if (currentClkState != lastClkState && currentClkState == LOW) {
+    acordaTela();
+    bool subindo = digitalRead(ENC_DT) != currentClkState;
+
+    if (!sistemaEmModoDMX) {
+      if (faseAtual == FASE_MODO) {
+        if (subindo) modoAtual = (modoAtual + 1) % 5;
+        else modoAtual = (modoAtual <= 0) ? 4 : modoAtual - 1;
+      }
+      else if (faseAtual == FASE_CAMPO) {
+        linhaSelecionada = (linhaSelecionada == 1) ? 2 : 1;
+      }
+      else if (faseAtual == FASE_VALOR) {
+        if (linhaSelecionada == 1) {
+          if (modoAtual == 0) {
+            if (subindo) canalSelecionado = (canalSelecionado + 1) % 4;
+            else canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
+          } else {
+            if (subindo) velocidad = min(velocidad + 5, 100);
+            else velocidad = max(velocidad - 5, 0);
+          }
+        } else if (linhaSelecionada == 2) {
+          if (modoAtual == 0) {
+            if (subindo) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255);
+            else brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
+          } else {
+            if (subindo) brilhoGeral = min(brilhoGeral + 15, 255);
+            else brilhoGeral = max(brilhoGeral - 15, 0);
+          }
+        }
+      }
+    } else {
+      // Modo DMX - Ajuste do endereço
+      if (subindo) enderecoDMX = (enderecoDMX >= 512) ? 1 : enderecoDMX + 1;
+      else enderecoDMX = (enderecoDMX <= 1) ? 512 : enderecoDMX - 1;
+    }
+    atualizarDisplay();
+  }
+  lastClkState = currentClkState;
+
+  // Detecta Click (SW)
+  if (digitalRead(ENC_SW) == LOW && millis() - ultimoDebounce >= 300) {
+    ultimoDebounce = millis();
+    acordaTela();
+
+    if (!sistemaEmModoDMX) {
+      if (faseAtual == FASE_MODO) { faseAtual = FASE_CAMPO; linhaSelecionada = 1; }
+      else if (faseAtual == FASE_CAMPO) { faseAtual = FASE_VALOR; }
+      else if (faseAtual == FASE_VALOR) {
+        exibirTelaSalvando();
+        salvarConfiguracao();
+        delay(800);
+        faseAtual = FASE_MODO;
+        linhaSelecionada = 0;
+      }
+    } else {
+      exibirTelaSalvando();
+      salvarConfiguracao();
+      delay(800);
+    }
+    atualizarDisplay();
+  }
+}
+
 void desenharLogo(const uint8_t* bitmap) {
   oled.clearDisplay();
   uint8_t *buffer = oled.getBuffer();
-  // Copia PROGMEM diretamente para o buffer (formato vertical de páginas nativo do chip SSD1306)
   for (int i = 0; i < 1024; i++) {
     buffer[i] = pgm_read_byte(&bitmap[i]);
   }
