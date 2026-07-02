@@ -69,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double brilhoGeral = 100;
   int enderecoDMX = 1;
   bool modoDMX = false;
+  int tamanhoGrade = 4;
 
   BleDevice? _deviceAlvo;
   bool _isConectado = false;
@@ -274,6 +275,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   })),
                   const Divider(height: 32, color: Colors.white10),
                   _buildSliderRow("BRILHO CANAL $canalManualSelecionado", brilhoCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val), "SET_CH$canalManualSelecionado"),
+                  const SizedBox(height: 12),
+                  _buildSliderRow("VELOCIDADE CANAL $canalManualSelecionado", velocidadesCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val), "SET_VCH$canalManualSelecionado"),
                 ],
               ),
             ),
@@ -293,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
-        Slider(value: val, min: 0, max: 100, divisions: 100, activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${(v/100*255).round()}")),
+        Slider(value: val, min: 0, max: 100, divisions: 100, activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")),
       ],
     );
   }
