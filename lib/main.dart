@@ -95,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _configurarEscutaDeDadosBLE() {
-    UniversalBle.onValueChange = (String dId, String sId, String cId, Uint8List val) {
+    UniversalBle.onValueChange = (String dId, String cId, Uint8List val, int? timestamp) {
       if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
         _buffer += utf8.decode(val);
         while (_buffer.contains('\n')) {
@@ -121,10 +121,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     };
 
-    UniversalBle.onConnectionChange = (String dId, BleConnectionState state) {
+    UniversalBle.onConnectionChange = (String dId, bool isConnected, String? error) {
       if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
-        bool connected = (state == BleConnectionState.connected);
-        setState(() { _isConectado = connected; if (!connected) { _deviceAlvo = null; _isProdutoMileto = false; } });
+        setState(() { _isConectado = isConnected; if (!isConnected) { _deviceAlvo = null; _isProdutoMileto = false; } });
       }
     };
   }
