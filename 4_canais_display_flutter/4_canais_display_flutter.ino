@@ -198,7 +198,6 @@ void setup() {
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
   pAdvertising->start();
 
   // --- UART DMX ---
