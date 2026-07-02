@@ -137,9 +137,12 @@ class MyCallbacks: public NimBLECharacteristicCallbacks {
 };
 
 void setup() {
+#ifdef RTC_CNTL_BROWN_OUT_REG
   // Desativa reset por Brownout no C3
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+#endif
   Serial.begin(115200);
+  randomSeed(micros());
   delay(2000); // Aguarda estabilização da fonte
 
   // Configuração do Encoder
@@ -195,7 +198,7 @@ void setup() {
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true); // OBRIGATÓRIO PARA APARECER NO SCAN DO CELULAR
+  pAdvertising->setScanResponse(true);
   pAdvertising->start();
 
   // --- UART DMX ---
