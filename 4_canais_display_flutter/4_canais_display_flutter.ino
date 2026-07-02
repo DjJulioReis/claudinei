@@ -110,18 +110,18 @@ void lidarComEncoder();
 
 // --- CALLBACKS BLE ---
 class MyServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer) override {
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
       dispositivoConectado = true;
     };
-    void onDisconnect(NimBLEServer* pServer) override {
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
       dispositivoConectado = false;
       NimBLEDevice::startAdvertising();
     }
 };
 
 class MyCallbacks: public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic) override {
-      String rxValue = pCharacteristic.getValue();
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
+      String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
         novoComandoBle = true;
@@ -186,7 +186,6 @@ void setup() {
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
   pAdvertising->start();
 
   // --- UART DMX ---
