@@ -91,6 +91,8 @@ unsigned long ultimoDebounce = 0;
 unsigned long ultimoPacoteDMX = 0;
 bool sinalDMXAtivo = false;
 bool dispositivoConectado = false;
+bool autenticado = false;
+uint32_t desafioHandshake = 0;
 
 // --- VARIÁVEIS DO ENCODER ---
 int lastClkState;
@@ -110,17 +112,20 @@ void lidarComEncoder();
 
 // --- CALLBACKS BLE ---
 class MyServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
       dispositivoConectado = true;
+      autenticado = false;
+      desafioHandshake = random(1000, 9999);
     };
-    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
+    void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
       dispositivoConectado = false;
+      autenticado = false;
       NimBLEDevice::startAdvertising();
     }
 };
 
 class MyCallbacks: public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
+    void onWrite(NimBLECharacteristic *pCharacteristic, ble_gap_conn_desc* desc) override {
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
         comandoPendente = rxValue;
@@ -202,15 +207,14 @@ void setup() {
 }
 
 void loop() {
-  // Handshake e Segurança MILETO
+  // Handshake Dinâmico MILETO
   static bool ultimoEstadoConexao = false;
   if (dispositivoConectado != ultimoEstadoConexao) {
     ultimoEstadoConexao = dispositivoConectado;
     acordaTela();
     if (dispositivoConectado) {
-      // --- AUTENTICAÇÃO PRODUTO MILETO ---
-      // O App agora espera este código para liberar o uso
-      pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n");
+      String msg = "AUTH_CHALLENGE:"; msg += desafioHandshake; msg += "\n";
+      pTxCharacteristic->setValue(msg.c_str());
       pTxCharacteristic->notify();
     }
     atualizarDisplay();
@@ -328,10 +332,8 @@ void lidarComEncoder() {
 
 void desenharLogo(const uint8_t* bitmap) {
   oled.clearDisplay();
-  uint8_t *buffer = oled.getBuffer();
-  for (int i = 0; i < 1024; i++) {
-    buffer[i] = pgm_read_byte(&bitmap[i]);
-  }
+  // Logo 128x64
+  oled.drawBitmap(0, 0, bitmap, 128, 64, WHITE);
   oled.display();
 }
 
@@ -438,6 +440,23 @@ void processarBluetooth() {
   int div = comandoPendente.indexOf(':'); if (div == -1) return;
   String cmd = comandoPendente.substring(0, div); String val = comandoPendente.substring(div + 1);
   int iv = val.toInt();
+
+  // Validação do Handshake Dinâmico
+  if (cmd == "AUTH_RESPONSE") {
+    if (iv == (desafioHandshake * 2) + 7) {
+      autenticado = true;
+      pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n");
+      pTxCharacteristic->notify();
+    } else {
+      autenticado = false;
+      pTxCharacteristic->setValue("MILETO_AUTH:INVALID\n");
+      pTxCharacteristic->notify();
+    }
+    return;
+  }
+
+  if (!autenticado) return; // Bloqueia comandos se não autenticado
+
   if (cmd == "GET_CAPABILITIES") { pTxCharacteristic->setValue("CAPS:MANUAL,FADE,STROBO,SEQUENC,FIXO\n"); pTxCharacteristic->notify(); return; }
   if (cmd == "SET_CH1") brilhoCanais[0] = map(iv, 0, 100, 0, 255);
   else if (cmd == "SET_CH2") brilhoCanais[1] = map(iv, 0, 100, 0, 255);
