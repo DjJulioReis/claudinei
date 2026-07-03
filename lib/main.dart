@@ -125,6 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           } else if (linha.startsWith("CAPS:")) {
             setState(() => modosLista = linha.replaceAll("CAPS:", "").split(","));
+          } else if (linha.startsWith("DMX:")) {
+            int? d = int.tryParse(linha.replaceAll("DMX:", ""));
+            if (d != null) setState(() => enderecoDMX = d);
           } else if (linha.startsWith("MODO:")) {
             // Sincroniza hardware -> app: "MODO:x|DMX:y"
             List<String> partes = linha.split("|");
@@ -297,10 +300,59 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildPainelDMX() {
     return Column(
       children: [
-        Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(20.0), child: Column(children: [const Text("ENDEREÇO DMX", style: TextStyle(color: Colors.grey)), Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)), const Text("(Ajuste via Encoder ou App)", style: TextStyle(color: Colors.white24, fontSize: 11))]))),
-        const SizedBox(height: 8),
-        _buildSliderCard("CANAL DE PARTIDA DMX", enderecoDMX.toDouble(), (val) => setState(() => enderecoDMX = val.toInt()), "SET_DMX", min: 1, max: 512),
+        Card(
+          color: const Color(0xFF1E1E1E),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              children: [
+                const Text("ENDEREÇO DMX ATUAL", style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildDmxControlBtn(Icons.remove, () {
+                      if (enderecoDMX > 1) {
+                        setState(() => enderecoDMX--);
+                        enviarComando("SET_DMX", "$enderecoDMX");
+                      }
+                    }),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text("$enderecoDMX", style: const TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.cyan)),
+                    ),
+                    _buildDmxControlBtn(Icons.add, () {
+                      if (enderecoDMX < 512) {
+                        setState(() => enderecoDMX++);
+                        enviarComando("SET_DMX", "$enderecoDMX");
+                      }
+                    }),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text("(Ajuste via Encoder ou Botões)", style: TextStyle(color: Colors.white24, fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildDmxControlBtn(IconData icon, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.cyan.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.cyan.withOpacity(0.3), width: 2),
+        ),
+        child: Icon(icon, color: Colors.cyan, size: 30),
+      ),
     );
   }
 

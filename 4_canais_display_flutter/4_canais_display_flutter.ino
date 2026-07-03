@@ -59,6 +59,7 @@ const char* nomesEfeitos[] = { "DMX SYSTEM", "MANUAL", "FADE", "STROBO", "SEQUEN
 unsigned long tempoUltimaAtividade = 0;
 bool telaAcesa = true;
 #define TEMPO_SLEEP_TELA 60000
+unsigned long ultimoDebounce = 0;
 
 unsigned long ultimaAtualizacaoEfeito = 0;
 int fadeValue = 0;
@@ -256,6 +257,10 @@ void lidarComEncoder() {
       if (faseAtual == FASE_VALOR) {
         if (subindo) { enderecoDMX++; if (enderecoDMX > 512) enderecoDMX = 1; }
         else { enderecoDMX--; if (enderecoDMX < 1) enderecoDMX = 512; }
+        if (dispositivoConectado && autenticado) {
+           String syncMsg = "DMX:" + String(enderecoDMX) + "\n";
+           pTxCharacteristic->setValue(syncMsg.c_str()); pTxCharacteristic->notify();
+        }
       }
     }
     atualizarDisplay();
