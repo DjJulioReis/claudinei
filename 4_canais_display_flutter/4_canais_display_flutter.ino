@@ -8,7 +8,6 @@
 #include "driver/uart.h"
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
-#include "esp_bt.h"
 
 // --- BIBLIOTECAS BLE (NIMBLE PARA C3) ---
 #include <NimBLEDevice.h>
@@ -33,26 +32,23 @@ bool dmx_em_frame = false;
 
 // --- UUIDs BLE (Nordic UART Service) ---
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+#define TX_UUID                "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+#define RX_UUID                "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 
 NimBLEServer *pServer = NULL;
-NimBLECharacteristic *pTxCharacteristic;
+NimBLECharacteristic *pTxCharacteristic = NULL;
 String comandoPendente = "";
 bool novoComandoBle = false;
 
 // --- MAPEAMENTO DE PINOS (C3 SUPER MINI) ---
-// MOSFETs (PWM)
 #define MOSFET_CH1 0
 #define MOSFET_CH2 1
 #define MOSFET_CH3 5
 #define MOSFET_CH4 4
 
-// --- NOVO SISTEMA: ENCODER ROTATIVO ---
-#define ENC_CLK 6    // Clock do Encoder
-#define ENC_DT  7    // Data do Encoder
-#define ENC_SW  10   // Botão de Confirmação (Click)
-#define CHAVE_DMX_MANUAL 3  // Botão separado para alternar modo
+#define ENC_CLK 6
+#define ENC_DT  7
+#define ENC_SW  10
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -76,7 +72,7 @@ int brilhoCanais[4] = { 255, 255, 255, 255 };
 int velocidadesCanais[4] = { 100, 100, 100, 100 };
 int niveisAtuais[4] = { 0, 0, 0, 0 };
 
-const char* nomesEfeitos[] = { "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
+const char* nomesEfeitos[] = { "DMX SYSTEM", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
 
 unsigned long tempoUltimaAtividade = 0;
 bool telaAcesa = true;
@@ -95,41 +91,44 @@ bool dispositivoConectado = false;
 bool autenticado = false;
 uint32_t desafioHandshake = 0;
 
-// --- VARIÁVEIS DO ENCODER ---
 int lastClkState;
+int lastSwState = HIGH;
 
 // --- FUNÇÕES ---
 void atualizarDisplay();
 void acordaTela();
-void executarEfeitos();
+void executarAnimacoesManuais();
 void writeChannel(int ch, int val);
 void enviarNiveisBT();
-void processarMesaDMX();
+void processarPacoteDMX();
 void salvarConfiguracao();
+void carregarConfiguracao();
 void desenharLogo(const uint8_t* bitmap);
 void processarBluetooth();
 void exibirTelaSalvando();
 void lidarComEncoder();
 
-// --- CALLBACKS BLE ---
-class MyServerCallbacks: public NimBLEServerCallbacks {
+// --- CALLBACKS BLE (EXATAMENTE COMO O USUARIO MANDOU) ---
+class ServerCallbacks: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
-      dispositivoConectado = true;
-      autenticado = false;
-      randomSeed(micros());
-      desafioHandshake = random(1000, 9999);
-      Serial.println("📱 Celular conectado! Ajustando parâmetros de rádio...");
-      pServer->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 400);
-    };
+        dispositivoConectado = true;
+        autenticado = false;
+        randomSeed(micros());
+        desafioHandshake = random(1000, 9999);
+        Serial.println("📱 Celular conectado! Ajustando parâmetros de rádio...");
+        pServer->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 400);
+    }
+
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
-      dispositivoConectado = false;
-      autenticado = false;
-      NimBLEDevice::startAdvertising();
-      Serial.printf("🔌 Celular desconectado. Motivo: %d\n", reason);
+        dispositivoConectado = false;
+        autenticado = false;
+        Serial.printf("🔌 Celular desconectado. Código do motivo: %d\n", reason);
+        NimBLEDevice::startAdvertising();
+        Serial.println("📢 Transmitindo pacote de anúncio BLE novamente...");
     }
 };
 
-class MyCallbacks: public NimBLECharacteristicCallbacks {
+class CharacteristicCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
       String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
@@ -146,13 +145,12 @@ void setup() {
   Serial.begin(115200);
   Serial.println("MILETO STARTING...");
 
-  // Configuração do Encoder
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
-  pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
 
   lastClkState = digitalRead(ENC_CLK);
+  lastSwState = digitalRead(ENC_SW);
 
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
@@ -170,30 +168,19 @@ void setup() {
   desenharLogo(MILETO_LOGO_1);
   delay(2000);
 
-  // Carrega configurações persistentes
-  preferences.begin("mileto_cfg", false);
-  enderecoDMX = preferences.getInt("dmx", 1);
-  modoAtual = preferences.getInt("modo", 0);
-  velocidad = preferences.getInt("vel", 100);
-  brilhoGeral = preferences.getInt("dim", 255);
-  for (int i = 0; i < 4; i++) {
-    char kCh[6], kV[7]; sprintf(kCh, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
-    brilhoCanais[i] = preferences.getInt(kCh, 255);
-    velocidadesCanais[i] = preferences.getInt(kV, 100);
-  }
-  preferences.end();
-  sistemaEmModoDMX = (modoAtual == 0);
+  carregarConfiguracao();
 
-  // --- CONFIGURAÇÃO BLE (NIMBLE) ---
+  // --- CONFIGURAÇÃO BLE (NIMBLE - FORMATO USUARIO) ---
   NimBLEDevice::init("MILETO");
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
   pServer = NimBLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
+  pServer->setCallbacks(new ServerCallbacks());
 
   NimBLEService *pService = pServer->createService(SERVICE_UUID);
-  pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, NIMBLE_PROPERTY::NOTIFY);
-  NimBLECharacteristic *pRxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, NIMBLE_PROPERTY::WRITE);
-  pRxCharacteristic->setCallbacks(new MyCallbacks());
+  pTxCharacteristic = pService->createCharacteristic(TX_UUID, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic *pRxCharacteristic = pService->createCharacteristic(RX_UUID, NIMBLE_PROPERTY::WRITE);
+  pRxCharacteristic->setCallbacks(new CharacteristicCallbacks());
   pService->start();
 
   NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
@@ -213,8 +200,8 @@ void setup() {
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->enableScanResponse(true);
 
-  pAdvertising->setMinInterval(32); // 20ms
-  pAdvertising->setMaxInterval(64); // 40ms
+  pAdvertising->setMinInterval(32);
+  pAdvertising->setMaxInterval(64);
 
   pAdvertising->start();
 
@@ -233,7 +220,6 @@ void setup() {
 }
 
 void loop() {
-  // Handshake Dinâmico MILETO
   static bool ultimoEstadoConexao = false;
   if (dispositivoConectado != ultimoEstadoConexao) {
     ultimoEstadoConexao = dispositivoConectado;
@@ -258,8 +244,11 @@ void loop() {
     oled.clearDisplay(); oled.display(); oled.ssd1306_command(SSD1306_DISPLAYOFF); telaAcesa = false;
   }
 
-  if (sistemaEmModoDMX) processarMesaDMX();
-  executarEfeitos();
+  if (sistemaEmModoDMX) {
+    processarPacoteDMX();
+  } else {
+    executarAnimacoesManuais();
+  }
 }
 
 void lidarComEncoder() {
@@ -270,23 +259,19 @@ void lidarComEncoder() {
     bool subindo = digitalRead(ENC_DT) != currentClkState;
 
     if (faseAtual == FASE_MODO) {
-      if (subindo) modoAtual = (modoAtual + 1) % 6; // 0 a 5
+      if (subindo) modoAtual = (modoAtual + 1) % 6;
       else modoAtual = (modoAtual <= 0) ? 5 : modoAtual - 1;
       sistemaEmModoDMX = (modoAtual == 0);
     }
     else if (!sistemaEmModoDMX) {
       if (faseAtual == FASE_CAMPO) {
-        int maxLinhas = (modoAtual == 0) ? 3 : 2; // Na vdd modo 0 é manual
-        // Se modoAtual for Manual (será 1 ou modo 0 depende da logica)
-        // No meu anterior modoAtual 0 era Manual. No usuário é DMX.
-        // Vou seguir a logica do meu anterior que está mais completa.
-        int mL = (modoAtual == 0) ? 3 : 2;
+        int mL = (modoAtual == 1) ? 3 : 2;
         if (subindo) linhaSelecionada = (linhaSelecionada % mL) + 1;
         else linhaSelecionada = (linhaSelecionada <= 1) ? mL : linhaSelecionada - 1;
       }
       else if (faseAtual == FASE_VALOR) {
         if (linhaSelecionada == 1) {
-          if (modoAtual == 0) {
+          if (modoAtual == 1) {
             if (subindo) canalSelecionado = (canalSelecionado + 1) % 4;
             else canalSelecionado = (canalSelecionado <= 0) ? 3 : canalSelecionado - 1;
           } else {
@@ -294,14 +279,14 @@ void lidarComEncoder() {
             else velocidad = max(velocidad - 5, 0);
           }
         } else if (linhaSelecionada == 2) {
-          if (modoAtual == 0) {
+          if (modoAtual == 1) {
             if (subindo) brilhoCanais[canalSelecionado] = min(brilhoCanais[canalSelecionado] + 15, 255);
             else brilhoCanais[canalSelecionado] = max(brilhoCanais[canalSelecionado] - 15, 0);
           } else {
             if (subindo) brilhoGeral = min(brilhoGeral + 15, 255);
             else brilhoGeral = max(brilhoGeral - 15, 0);
           }
-        } else if (linhaSelecionada == 3 && modoAtual == 0) {
+        } else if (linhaSelecionada == 3 && modoAtual == 1) {
           if (subindo) velocidadesCanais[canalSelecionado] = min(velocidadesCanais[canalSelecionado] + 5, 100);
           else velocidadesCanais[canalSelecionado] = max(velocidadesCanais[canalSelecionado] - 5, 0);
         }
@@ -366,14 +351,11 @@ void enviarNiveisBT() {
   }
 }
 
-void executarEfeitos() {
+void executarAnimacoesManuais() {
   unsigned long tempo = millis();
   int d = map(velocidad, 0, 100, 800, 25);
 
-  if (sistemaEmModoDMX) {
-     // DMX processado no processarMesaDMX atualiza brilhoCanais e brilhoGeral
-     for(int i=0; i<4; i++) writeChannel(i, (brilhoCanais[i] * brilhoGeral)/255);
-  } else if (modoAtual == 1) { // MANUAL (Ajustado para bater com nomesEfeitos[0]="MANUAL" mas no menu o modoAtual 1 é Manual)
+  if (modoAtual == 1) { // MANUAL
       static unsigned long ts[4] = {0,0,0,0}; static bool sts[4] = {0,0,0,0};
       for(int i=0; i<4; i++){
         if(velocidadesCanais[i] >= 100) sts[i] = 1;
@@ -410,7 +392,7 @@ void executarEfeitos() {
   enviarNiveisBT();
 }
 
-void processarMesaDMX() {
+void processarPacoteDMX() {
   uart_event_t evt;
   while (xQueueReceive(dmx_queue, (void*)&evt, 0)) {
     if (evt.type == UART_BREAK) { uart_flush_input(DMX_UART_NUM); dmx_idx = 0; dmx_em_frame = true; }
@@ -437,6 +419,8 @@ void processarMesaDMX() {
       }
     }
   }
+  for(int i=0; i<4; i++) writeChannel(i, (brilhoCanais[i] * brilhoGeral)/255);
+  enviarNiveisBT();
 }
 
 void processarBluetooth() {
@@ -470,7 +454,7 @@ void processarBluetooth() {
   else if (cmd == "SET_VCH2") velocidadesCanais[1] = iv;
   else if (cmd == "SET_VCH3") velocidadesCanais[2] = iv;
   else if (cmd == "SET_VCH4") velocidadesCanais[3] = iv;
-  else if (cmd == "SET_MODO") { modoAtual = iv + 1; }
+  else if (cmd == "SET_MODO") { modoAtual = iv + 1; sistemaEmModoDMX = false; }
   else if (cmd == "SET_VEL") { velocidad = min(iv, 100); }
   else if (cmd == "SET_DIM") { brilhoGeral = map(iv, 0, 100, 0, 255); }
   else if (cmd == "SET_DMX") { enderecoDMX = iv; }
@@ -490,41 +474,50 @@ void salvarConfiguracao() {
   preferences.end();
 }
 
+void carregarConfiguracao() {
+  preferences.begin("mileto_cfg", true);
+  enderecoDMX = preferences.getInt("dmx", 1);
+  modoAtual = preferences.getInt("modo", 0);
+  velocidad = preferences.getInt("vel", 100);
+  brilhoGeral = preferences.getInt("dim", 255);
+  for (int i = 0; i < 4; i++) {
+    char kCh[6], kV[7]; sprintf(kCh, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
+    brilhoCanais[i] = preferences.getInt(kCh, 255);
+    velocidadesCanais[i] = preferences.getInt(kV, 100);
+  }
+  preferences.end();
+  sistemaEmModoDMX = (modoAtual == 0);
+}
+
 void atualizarDisplay() {
   if (!telaAcesa) return;
   oled.clearDisplay(); oled.setTextSize(1);
   if (sistemaEmModoDMX) {
-    oled.setCursor(0, 0); oled.print("MESA DMX: 7 CHs");
-    oled.setCursor(0, 15); oled.print("STATUS: "); oled.print(sinalDMXAtivo ? "OK" : "OFF");
-    int porc = map(brilhoGeral, 0, 255, 0, 100);
-    oled.setCursor(0, 30); oled.print("Brilho Geral");
-    oled.setCursor(0, 42); for (int i = 0; i < 12; i++) oled.print(i < (porc * 12) / 100 ? (char)219 : (char)176);
-    oled.setCursor(85, 48); oled.setTextSize(2); oled.print(enderecoDMX);
+    oled.setCursor(0, 0); oled.print("--- MILETO ---");
+    oled.setCursor(0, 16); oled.print("MODO: DMX SYSTEM");
+    oled.drawFastHLine(0, 28, 128, WHITE);
+    oled.setCursor(0, 36); if (faseAtual == FASE_CAMPO) oled.print("> "); else oled.print("  "); oled.print("Config. Canal");
+    oled.setCursor(0, 50); if (faseAtual == FASE_VALOR) oled.print("[ "); else oled.print("  "); oled.print("CANAL DMX: "); oled.print(enderecoDMX);
+    if (faseAtual == FASE_VALOR) oled.print(" ]");
   } else {
-    oled.setCursor(0, 0); oled.print(dispositivoConectado ? "* APP ATIVO *" : "--- MANUAL ---");
-    if (modoAtual == 1) {
-      oled.setCursor(0, 10); oled.print("CH:"); oled.print(canalSelecionado + 1);
-      if(faseAtual != FASE_MODO && linhaSelecionada == 1) oled.print(" <");
-
+    oled.setCursor(0, 0); oled.print("--- MILETO ---");
+    oled.setCursor(0, 16); if (faseAtual == FASE_MODO) oled.print("> "); else oled.print("  "); oled.print("MODO: "); oled.print(nomesEfeitos[modoAtual]);
+    oled.drawFastHLine(0, 28, 128, WHITE);
+    if (modoAtual == 1) { // MANUAL
+      oled.setCursor(0, 34); if (faseAtual == FASE_CAMPO && linhaSelecionada == 1) oled.print("> "); else oled.print("  ");
+      oled.print("CH:"); oled.print(canalSelecionado + 1); if (faseAtual == FASE_VALOR && linhaSelecionada == 1) oled.print(" *");
       int b = map(brilhoCanais[canalSelecionado], 0, 255, 0, 100);
-      oled.setCursor(0, 20); oled.print("B:"); oled.print(b); oled.print("%");
-      if(faseAtual != FASE_MODO && linhaSelecionada == 2) oled.print(" <");
-      oled.setCursor(50, 20); for (int i = 0; i < 10; i++) oled.print(i < (b * 10) / 100 ? (char)219 : (char)176);
-
-      int s = velocidadesCanais[canalSelecionado];
-      oled.setCursor(0, 30); oled.print("V:"); oled.print(s); oled.print("%");
-      if(faseAtual != FASE_MODO && linhaSelecionada == 3) oled.print(" <");
-      oled.setCursor(50, 30); for (int i = 0; i < 10; i++) oled.print(i < (s * 10) / 100 ? (char)219 : (char)176);
-
-      oled.setCursor(0, 45); oled.print("MODO: "); oled.print(nomesEfeitos[modoAtual-1]);
+      oled.setCursor(0, 48); if (faseAtual == FASE_CAMPO && linhaSelecionada == 2) oled.print("> "); else oled.print("  ");
+      oled.print("B:"); oled.print(b); oled.print("% ");
+      int v = velocidadesCanais[canalSelecionado];
+      if (faseAtual == FASE_CAMPO && linhaSelecionada == 3) oled.print("> "); else oled.print("  ");
+      oled.print("V:"); oled.print(v); oled.print("%");
     } else {
-      int p = map(brilhoGeral, 0, 255, 0, 100);
-      oled.setCursor(0, 12); oled.print("Efeito: "); oled.print(nomesEfeitos[modoAtual-1]);
-      if(faseAtual != FASE_MODO && linhaSelecionada == 1) oled.print(" <");
-      oled.setCursor(0, 26); for (int i = 0; i < 12; i++) oled.print(i < (p * 12) / 100 ? (char)219 : (char)176);
-      oled.setCursor(0, 44); oled.setTextSize(2); oled.print(p); oled.print("%");
+      oled.setCursor(0, 34); if (faseAtual == FASE_CAMPO && linhaSelecionada == 1) oled.print("> "); else oled.print("  ");
+      oled.print("Velocidade: "); oled.print(velocidad); oled.print("%");
+      oled.setCursor(0, 48); if (faseAtual == FASE_CAMPO && linhaSelecionada == 2) oled.print("> "); else oled.print("  ");
+      oled.print("Dimmer: "); oled.print(map(brilhoGeral, 0, 255, 0, 100)); oled.print("%");
     }
-    if (faseAtual == FASE_VALOR) { oled.setCursor(110, 48); oled.setTextSize(1); oled.print("[*]"); }
   }
   oled.display();
 }
