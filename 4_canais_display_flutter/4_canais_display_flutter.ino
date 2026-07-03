@@ -4,40 +4,31 @@
 #include <Adafruit_SSD1306.h>
 #include <Preferences.h>
 
-// --- INCLUDES SOLICITADOS PELO USUARIO ---
+// --- INCLUDES SOLICITADOS ---
 #include "driver/uart.h"
 #include "soc/uart_struct.h"
 #include "freertos/queue.h"
 #include "soc/rtc_cntl_reg.h"
-
-// --- INCLUDES CORRETOS PARA NIMBLE ---
 #include <NimBLEDevice.h>
-
-// --- INCLUSÃO DA LOGO ---
 #include "MILETO_LOGO_1.h"
 
-// --- Configurações do Display OLED ---
 #define LARGURA_TELA 128
 #define ALTURA_TELA 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(LARGURA_TELA, ALTURA_TELA, &Wire, OLED_RESET);
 
-// --- Pinos do Encoder ---
 #define ENC_CLK 6
 #define ENC_DT   7
 #define ENC_SW  10
 
-// --- Pinos MOSFET (C3 SUPER MINI) ---
 #define MOSFET_CH1 0
 #define MOSFET_CH2 1
 #define MOSFET_CH3 5
 #define MOSFET_CH4 4
 
-// --- Configurações PWM ---
 #define PWM_FREQ 4000
 #define PWM_RES 8
 
-// --- CONFIGURAÇÃO UART DMX512 ---
 #define DMX_UART_NUM UART_NUM_1
 #define DMX_RX_PIN 20
 static QueueHandle_t dmx_queue;
@@ -45,27 +36,29 @@ uint8_t raw_dmx_buf[520];
 int dmx_idx = 0;
 bool dmx_em_frame = false;
 
-// --- Máquina de Estados do Menu ---
 enum FasesMenu { FASE_MODO, FASE_CAMPO, FASE_VALOR };
 FasesMenu faseAtual = FASE_MODO;
 
-// --- Variáveis de Controle Globais ---
-int lastClkState;
-int lastSwState = HIGH;
-unsigned long ultimoDebounce = 0;
-bool sistemaEmModoDMX = false;
-int modoAtual = 0;          // 0 = DMX, 1 a 5 = Modos Manuais/Efeitos
-int linhaSelecionada = 0;
+// --- VARIÁVEIS DE ESTADO ---
+bool sistemaEmModoDMX = false; // Estado Mestre
+int modoAtual = 1;            // Efeito Selecionado (1 a 5)
+int modoDMXTemp = 1;          // Efeito vindo da Mesa DMX
+
+int linhaSelecionada = 1;
 int canalSelecionado = 0;
 int enderecoDMX = 1;
 int velocidad = 50;
 int brilhoGeral = 255;
 
 int brilhoCanais[4] = {255, 255, 255, 255};
-int velocidadesCanais[4] = {50, 50, 50, 50};
+int velocidadesCanais[4] = {100, 100, 100, 100};
 int niveisAtuais[4] = {0, 0, 0, 0};
 
 const char* nomesEfeitos[] = { "DMX SYSTEM", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
+
+unsigned long tempoUltimaAtividade = 0;
+bool telaAcesa = true;
+#define TEMPO_SLEEP_TELA 60000
 
 unsigned long ultimaAtualizacaoEfeito = 0;
 int fadeValue = 0;
@@ -73,7 +66,6 @@ bool fadeDirection = true;
 bool estadoStrobo = false;
 int passoAlternado = 0;
 
-// --- Configurações BLE (NimBLE com ponteiros corretos) ---
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pTxCharacteristic = NULL;
 bool dispositivoConectado = false;
@@ -88,45 +80,31 @@ bool novoComandoBle = false;
 
 Preferences preferences;
 
-// --- CALLBACKS BLE ---
 class ServerCallbacks: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
         dispositivoConectado = true;
         autenticado = false;
         randomSeed(micros());
         desafioHandshake = random(1000, 9999);
-        Serial.println("📱 Celular conectado! Desafio gerado.");
         pServer->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 400);
     }
-
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         dispositivoConectado = false;
         autenticado = false;
         NimBLEDevice::startAdvertising();
-        Serial.println("🔌 Desconectado. Publicidade reiniciada.");
     }
 };
 
 class CharacteristicCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
       String rxValue = pCharacteristic->getValue();
-      if (rxValue.length() > 0) {
-        comandoPendente = rxValue;
-        novoComandoBle = true;
-      }
+      if (rxValue.length() > 0) { comandoPendente = rxValue; novoComandoBle = true; }
     }
 };
 
-unsigned long tempoUltimaAtividade = 0;
-bool telaAcesa = true;
-#define TEMPO_SLEEP_TELA 60000
-
 void acordaTela() {
   tempoUltimaAtividade = millis();
-  if (!telaAcesa) {
-    display.ssd1306_command(SSD1306_DISPLAYON);
-    telaAcesa = true;
-  }
+  if (!telaAcesa) { display.ssd1306_command(SSD1306_DISPLAYON); telaAcesa = true; }
 }
 
 void exibirTelaSalvando() {
@@ -140,14 +118,13 @@ void exibirTelaSalvando() {
 
 void salvarConfiguracao() {
   preferences.begin("mileto_cfg", false);
+  preferences.putInt("dmx_mode", sistemaEmModoDMX ? 1 : 0);
   preferences.putInt("modo", modoAtual);
   preferences.putInt("dmx", enderecoDMX);
   preferences.putInt("vel", velocidad);
   preferences.putInt("dim", brilhoGeral);
   for (int i = 0; i < 4; i++) {
-    char kC[6], kV[7];
-    sprintf(kC, "ch%d", i + 1);
-    sprintf(kV, "vch%d", i + 1);
+    char kC[6], kV[7]; sprintf(kC, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
     preferences.putInt(kC, brilhoCanais[i]);
     preferences.putInt(kV, velocidadesCanais[i]);
   }
@@ -156,19 +133,17 @@ void salvarConfiguracao() {
 
 void carregarConfiguracao() {
   preferences.begin("mileto_cfg", true);
-  modoAtual = preferences.getInt("modo", 0);
+  sistemaEmModoDMX = (preferences.getInt("dmx_mode", 0) == 1);
+  modoAtual = preferences.getInt("modo", 1);
   enderecoDMX = preferences.getInt("dmx", 1);
   velocidad = preferences.getInt("vel", 50);
   brilhoGeral = preferences.getInt("dim", 255);
   for (int i = 0; i < 4; i++) {
-    char kC[6], kV[7];
-    sprintf(kC, "ch%d", i + 1);
-    sprintf(kV, "vch%d", i + 1);
+    char kC[6], kV[7]; sprintf(kC, "ch%d", i + 1); sprintf(kV, "vch%d", i + 1);
     brilhoCanais[i] = preferences.getInt(kC, 255);
-    velocidadesCanais[i] = preferences.getInt(kV, 50);
+    velocidadesCanais[i] = preferences.getInt(kV, 100);
   }
   preferences.end();
-  sistemaEmModoDMX = (modoAtual == 0);
 }
 
 void writeChannel(int ch, int val) {
@@ -197,6 +172,7 @@ void enviarNiveisBT() {
 }
 
 void atualizarDisplay() {
+  if (!telaAcesa) return;
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
@@ -205,7 +181,13 @@ void atualizarDisplay() {
 
   display.setCursor(0, 16);
   if (faseAtual == FASE_MODO) display.print("> "); else display.print("  ");
-  display.print("MODO: "); display.print(nomesEfeitos[modoAtual]);
+
+  if (sistemaEmModoDMX && faseAtual != FASE_MODO) {
+      display.print("MODO: DMX SYSTEM");
+  } else {
+      display.print("MODO: ");
+      display.print(nomesEfeitos[sistemaEmModoDMX ? 0 : modoAtual]);
+  }
 
   display.drawFastHLine(0, 28, 128, SSD1306_WHITE);
 
@@ -240,13 +222,19 @@ void atualizarDisplay() {
   display.display();
 }
 
+int lastClkState;
 void lidarComEncoder() {
   int currentClkState = digitalRead(ENC_CLK);
   if (currentClkState != lastClkState && currentClkState == LOW) {
+    acordaTela();
     bool subindo = digitalRead(ENC_DT) != currentClkState;
     if (faseAtual == FASE_MODO) {
-      if (subindo) modoAtual = (modoAtual + 1) % 6; else modoAtual = (modoAtual <= 0) ? 5 : modoAtual - 1;
-      sistemaEmModoDMX = (modoAtual == 0);
+      static int selection = sistemaEmModoDMX ? 0 : modoAtual;
+      if (subindo) selection = (selection + 1) % 6;
+      else selection = (selection <= 0) ? 5 : selection - 1;
+
+      if (selection == 0) { sistemaEmModoDMX = true; }
+      else { sistemaEmModoDMX = false; modoAtual = selection; }
     }
     else if (!sistemaEmModoDMX) {
       if (faseAtual == FASE_CAMPO) {
@@ -265,23 +253,27 @@ void lidarComEncoder() {
         }
       }
     } else {
-      if (subindo) { enderecoDMX++; if (enderecoDMX > 512) enderecoDMX = 1; }
-      else { enderecoDMX--; if (enderecoDMX < 1) enderecoDMX = 512; }
+      if (faseAtual == FASE_VALOR) {
+        if (subindo) { enderecoDMX++; if (enderecoDMX > 512) enderecoDMX = 1; }
+        else { enderecoDMX--; if (enderecoDMX < 1) enderecoDMX = 512; }
+      }
     }
     atualizarDisplay();
   }
   lastClkState = currentClkState;
 
   int currentSwState = digitalRead(ENC_SW);
+  static int lastSwState = HIGH;
   if (currentSwState != lastSwState && currentSwState == LOW) {
     if (millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis();
+      acordaTela();
       if (faseAtual == FASE_MODO) { faseAtual = FASE_CAMPO; linhaSelecionada = 1; }
       else if (faseAtual == FASE_CAMPO) { faseAtual = FASE_VALOR; }
       else if (faseAtual == FASE_VALOR) {
         exibirTelaSalvando(); salvarConfiguracao(); delay(500);
         if (dispositivoConectado && autenticado) {
-          String msg = "MODO:" + String(modoAtual) + "|DMX:" + String(enderecoDMX) + "\n";
+          String msg = "MODO:" + String(sistemaEmModoDMX ? 0 : modoAtual) + "|DMX:" + String(enderecoDMX) + "\n";
           pTxCharacteristic->setValue(msg.c_str()); pTxCharacteristic->notify();
         }
         faseAtual = FASE_MODO; linhaSelecionada = 0;
@@ -293,6 +285,7 @@ void lidarComEncoder() {
 }
 
 void processarBluetooth() {
+  acordaTela();
   comandoPendente.replace("\n", ""); comandoPendente.replace("\r", ""); comandoPendente.trim();
   int div = comandoPendente.indexOf(':'); if (div == -1) return;
   String cmd = comandoPendente.substring(0, div); String val = comandoPendente.substring(div + 1);
@@ -301,12 +294,10 @@ void processarBluetooth() {
   if (cmd == "AUTH_RESPONSE") {
     if (iv == (desafioHandshake * 2) + 7) {
       autenticado = true;
-      pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n");
-      pTxCharacteristic->notify();
+      pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n"); pTxCharacteristic->notify();
     } else {
       autenticado = false;
-      pTxCharacteristic->setValue("MILETO_AUTH:INVALID\n");
-      pTxCharacteristic->notify();
+      pTxCharacteristic->setValue("MILETO_AUTH:INVALID\n"); pTxCharacteristic->notify();
     }
     return;
   }
@@ -320,50 +311,22 @@ void processarBluetooth() {
   else if (cmd == "SET_VCH2") velocidadesCanais[1] = iv;
   else if (cmd == "SET_VCH3") velocidadesCanais[2] = iv;
   else if (cmd == "SET_VCH4") velocidadesCanais[3] = iv;
-  else if (cmd == "SET_MODO") { modoAtual = iv; sistemaEmModoDMX = (modoAtual == 0); }
+  else if (cmd == "SET_MODO") {
+    if (iv == 0) { sistemaEmModoDMX = true; }
+    else { sistemaEmModoDMX = false; modoAtual = iv; }
+  }
   else if (cmd == "SET_VEL") { velocidad = min(iv, 100); }
   else if (cmd == "SET_DIM") { brilhoGeral = map(iv, 0, 100, 0, 255); }
   else if (cmd == "SET_DMX") { enderecoDMX = iv; }
-  else if (cmd == "CHAVE_MODO") { sistemaEmModoDMX = (val == "DMX"); modoAtual = sistemaEmModoDMX ? 0 : 1; }
-  else if (cmd == "EFEITO_PISTA") { if(val=="START") modoAtual=4; else modoAtual=1; }
+  else if (cmd == "CHAVE_MODO") { sistemaEmModoDMX = (val == "DMX"); if(!sistemaEmModoDMX && modoAtual == 0) modoAtual = 1; }
   else if (cmd == "GRAVAR") { exibirTelaSalvando(); salvarConfiguracao(); pTxCharacteristic->setValue("GRAVAR:OK\n"); pTxCharacteristic->notify(); delay(1000); }
   atualizarDisplay();
 }
 
-void processarPacoteDMX() {
-  uart_event_t evt;
-  while (xQueueReceive(dmx_queue, (void*)&evt, 0)) {
-    if (evt.type == UART_BREAK) { uart_flush_input(DMX_UART_NUM); dmx_idx = 0; dmx_em_frame = true; }
-    else if (evt.type == UART_DATA && dmx_em_frame) {
-      size_t l = 0; uart_get_buffered_data_len(DMX_UART_NUM, &l);
-      if (l > 0) {
-        uint8_t t[64]; int r = uart_read_bytes(DMX_UART_NUM, t, (l > 64) ? 64 : l, 0);
-        for (int i = 0; i < r; i++) {
-          if (dmx_em_frame) {
-            if (dmx_idx < 520) raw_dmx_buf[dmx_idx] = t[i]; dmx_idx++;
-            if (dmx_idx >= (enderecoDMX + 7)) {
-              if (raw_dmx_buf[0] == 0x00) {
-                int idx = enderecoDMX;
-                for(int c=0; c<4; c++) brilhoCanais[c] = raw_dmx_buf[idx+c];
-                brilhoGeral = raw_dmx_buf[idx+4]; velocidad = map(raw_dmx_buf[idx+5], 0, 255, 0, 100);
-                int m = raw_dmx_buf[idx+6];
-                if (m <= 50) modoAtual = 1; else if (m <= 100) modoAtual = 2;
-                else if (m <= 150) modoAtual = 3; else if (m <= 200) modoAtual = 4; else modoAtual = 5;
-              }
-              dmx_em_frame = false;
-            }
-          }
-        }
-      }
-    }
-  }
-  executarAnimacoesManuais();
-}
-
-void executarAnimacoesManuais() {
+void executarEfeitos(int modo) {
   unsigned long tempo = millis();
   int d = map(velocidad, 0, 100, 800, 25);
-  if (modoAtual == 1) { // MANUAL
+  if (modo == 1) { // MANUAL
       static unsigned long ts[4] = {0,0,0,0}; static bool sts[4] = {0,0,0,0};
       for(int i=0; i<4; i++){
         if(sistemaEmModoDMX || velocidadesCanais[i] >= 100) sts[i] = 1;
@@ -375,7 +338,7 @@ void executarAnimacoesManuais() {
       }
   } else if (brilhoGeral == 0) { for(int i=0; i<4; i++) writeChannel(i, 0); }
   else {
-    switch (modoAtual) {
+    switch (modo) {
       case 2: // FADE
         if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d / 12) {
           ultimaAtualizacaoEfeito = tempo; if (fadeDirection) fadeValue++; else fadeValue--;
@@ -397,7 +360,41 @@ void executarAnimacoesManuais() {
       case 5: for(int i=0; i<4; i++) writeChannel(i, brilhoGeral); break;
     }
   }
-  enviarNiveisBT();
+}
+
+void processarDMX() {
+  uart_event_t evt;
+  while (xQueueReceive(dmx_queue, (void*)&evt, 0)) {
+    if (evt.type == UART_BREAK) { uart_flush_input(DMX_UART_NUM); dmx_idx = 0; dmx_em_frame = true; }
+    else if (evt.type == UART_DATA && dmx_em_frame) {
+      size_t l = 0; uart_get_buffered_data_len(DMX_UART_NUM, &l);
+      if (l > 0) {
+        uint8_t t[64]; int r = uart_read_bytes(DMX_UART_NUM, t, (l > 64) ? 64 : l, 0);
+        for (int i = 0; i < r; i++) {
+          if (dmx_em_frame) {
+            if (dmx_idx < 520) raw_dmx_buf[dmx_idx] = t[i]; dmx_idx++;
+            if (dmx_idx >= (enderecoDMX + 7)) {
+              if (raw_dmx_buf[0] == 0x00) {
+                int idx = enderecoDMX;
+                for(int c=0; c<4; c++) brilhoCanais[c] = raw_dmx_buf[idx+c];
+                brilhoGeral = raw_dmx_buf[idx+4]; velocidad = map(raw_dmx_buf[idx+5], 0, 255, 0, 100);
+                int m = raw_dmx_buf[idx+6];
+                if (m <= 50) modoDMXTemp = 1; else if (m <= 100) modoDMXTemp = 2;
+                else if (m <= 150) modoDMXTemp = 3; else if (m <= 200) modoDMXTemp = 4; else modoDMXTemp = 5;
+              }
+              dmx_em_frame = false;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void desenharLogo(const unsigned char* bitmap, int largura, int altura) {
+  display.clearDisplay();
+  display.drawBitmap(0, 0, bitmap, largura, altura, WHITE);
+  display.display();
 }
 
 void setup() {
@@ -408,16 +405,14 @@ void setup() {
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
   lastClkState = digitalRead(ENC_CLK);
-  lastSwState = digitalRead(ENC_SW);
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH3, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH4, PWM_FREQ, PWM_RES);
   Wire.begin(8, 9);
-  delay(100);
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { Serial.println("OLED ERR"); }
   display.setTextColor(SSD1306_WHITE);
-  desenharLogo(MILETO_LOGO_1);
+  desenharLogo(MILETO_LOGO_1, LARGURA_TELA, ALTURA_TELA);
   delay(3000);
   carregarConfiguracao();
   atualizarDisplay();
@@ -465,15 +460,14 @@ void loop() {
     lastAuthReq = millis();
     String msg = "AUTH_CHALLENGE:"; msg += desafioHandshake; msg += "\n";
     pTxCharacteristic->setValue(msg.c_str()); pTxCharacteristic->notify();
-    Serial.println("🔑 Desafio enviado...");
   }
-
   if (telaAcesa && (millis() - tempoUltimaAtividade >= TEMPO_SLEEP_TELA)) {
     display.clearDisplay(); display.display();
     display.ssd1306_command(SSD1306_DISPLAYOFF);
     telaAcesa = false;
   }
-
   lidarComEncoder();
-  if (sistemaEmModoDMX) processarPacoteDMX(); else executarAnimacoesManuais();
+  if (sistemaEmModoDMX) { processarDMX(); executarEfeitos(modoDMXTemp); }
+  else { executarEfeitos(modoAtual); }
+  enviarNiveisBT();
 }

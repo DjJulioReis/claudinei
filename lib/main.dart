@@ -123,6 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
             if (n.length >= 4) {
               setState(() => niveisReaisCanais = List.generate(4, (i) => double.tryParse(n[i]) ?? 0.0));
             }
+          } else if (linha.startsWith("CAPS:")) {
+            setState(() => modosLista = linha.replaceAll("CAPS:", "").split(","));
           } else if (linha.startsWith("MODO:")) {
             // Sincroniza hardware -> app: "MODO:x|DMX:y"
             List<String> partes = linha.split("|");
@@ -132,8 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
                int? d = int.tryParse(partes[1].replaceAll("DMX:", ""));
                if (d != null) setState(() => enderecoDMX = d);
             }
-          } else if (linha.startsWith("CAPS:")) {
-            setState(() => modosLista = linha.replaceAll("CAPS:", "").split(","));
           } else if (linha.startsWith("CHAVE_MODO:")) {
             setState(() { modoDMX = (linha.replaceAll("CHAVE_MODO:", "") == "DMX"); modoAtual = modoDMX ? 0 : 1; });
           } else if (linha.contains("GRAVAR:OK")) {
@@ -291,11 +291,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTelaProdutoNaoEncontrado() {
-    return Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.security, size: 80, color: Colors.orangeAccent), const SizedBox(height: 24), const Text("Hardware não validado.", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: const Size(double.infinity, 50)), onPressed: _abrirSiteMileto, child: const Text("SITE MILETO"))])));
+    return Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.security, size: 80, color: Colors.orangeAccent), const SizedBox(height: 24), const Text("Aguardando validação...", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: const Size(double.infinity, 50)), onPressed: _abrirSiteMileto, child: const Text("SITE MILETO"))])));
   }
 
   Widget _buildPainelDMX() {
-    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(20.0), child: Column(children: [const Text("ENDEREÇO DMX", style: TextStyle(color: Colors.grey)), Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)), const Text("(Ajuste via Encoder)", style: TextStyle(color: Colors.white24, fontSize: 11))])));
+    return Column(
+      children: [
+        Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(20.0), child: Column(children: [const Text("ENDEREÇO DMX", style: TextStyle(color: Colors.grey)), Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)), const Text("(Ajuste via Encoder ou App)", style: TextStyle(color: Colors.white24, fontSize: 11))]))),
+        const SizedBox(height: 8),
+        _buildSliderCard("CANAL DE PARTIDA DMX", enderecoDMX.toDouble(), (val) => setState(() => enderecoDMX = val.toInt()), "SET_DMX", min: 1, max: 512),
+      ],
+    );
   }
 
   Widget _buildPainelManuais() {
@@ -351,12 +357,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSliderRow(String label, double val, Function(double) onCh, String cmd) {
-    return Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]), Slider(value: val, min: 0, max: 100, divisions: 100, activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}"))]);
+  Widget _buildSliderRow(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
+    return Column(
+      children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
+        Slider(value: val, min: min, max: max, divisions: (max - min).toInt(), activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")),
+      ],
+    );
   }
 
-  Widget _buildSliderCard(String label, double val, Function(double) onCh, String cmd) {
-    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(12), child: _buildSliderRow(label, val, onCh, cmd)));
+  Widget _buildSliderCard(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
+    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(12), child: _buildSliderRow(label, val, onCh, cmd, min: min, max: max)));
   }
 
   Widget _buildSimuladorPistaLed() {
