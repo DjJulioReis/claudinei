@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:universal_ble/universal_ble.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -74,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   BleDevice? _deviceAlvo;
   bool _isConectado = false;
   bool _isCarregando = false;
-  bool _isProdutoMileto = false; // Novo: Validação de Hardware
+  bool _isProdutoMileto = false;
 
   final String _serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   final String _txUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
@@ -87,15 +88,19 @@ class _HomeScreenState extends State<HomeScreen> {
   List<double> brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
   List<double> velocidadesCanaisManuais = [100.0, 100.0, 100.0, 100.0];
 
+  final Set<String> _macsVistos = {};
+
   @override
   void initState() {
     super.initState();
     _configurarEscutaDeDadosBLE();
-    _inicializarEConectarBluetooth();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _inicializarEConectarBluetooth();
+    });
   }
 
   void _configurarEscutaDeDadosBLE() {
-    UniversalBle.onValueChange = (String dId, String cId, Uint8List val) {
+    UniversalBle.onValueChange = (String dId, String cId, Uint8List val, int? timestamp) {
       if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
         _buffer += utf8.decode(val);
         while (_buffer.contains('\n')) {
@@ -103,6 +108,8 @@ class _HomeScreenState extends State<HomeScreen> {
           String linha = _buffer.substring(0, pos).trim();
           _buffer = _buffer.substring(pos + 1);
           if (linha.isEmpty) continue;
+
+          print("📝 Linha recebida do hardware: $linha");
 
           if (linha.startsWith("AUTH_CHALLENGE:")) {
             int challenge = int.tryParse(linha.split(":")[1]) ?? 0;
@@ -113,47 +120,151 @@ class _HomeScreenState extends State<HomeScreen> {
             enviarComando("GET_CAPABILITIES", "1");
           } else if (linha.startsWith("CH_LEVELS:")) {
             List<String> n = linha.replaceAll("CH_LEVELS:", "").split(",");
-            if (n.length >= 4) setState(() => niveisReaisCanais = List.generate(4, (i) => double.tryParse(n[i]) ?? 0.0));
+            if (n.length >= 4) {
+              setState(() => niveisReaisCanais = List.generate(4, (i) => double.tryParse(n[i]) ?? 0.0));
+            }
           } else if (linha.startsWith("CAPS:")) {
             setState(() => modosLista = linha.replaceAll("CAPS:", "").split(","));
           } else if (linha.startsWith("CHAVE_MODO:")) {
             setState(() => modoDMX = (linha.replaceAll("CHAVE_MODO:", "") == "DMX"));
+          } else if (linha.startsWith("DMX_ADDR:")) {
+            int? novoEnd = int.tryParse(linha.replaceAll("DMX_ADDR:", ""));
+            if (novoEnd != null) setState(() => enderecoDMX = novoEnd);
           } else if (linha.contains("GRAVAR:OK")) {
-            _mostrarFeedback("💾 Salvo!");
+            _mostrarFeedback("💾 Configurações salvas na EEPROM!");
           }
         }
       }
     };
 
-    UniversalBle.onConnectionChange = (String dId, BleConnectionState state) {
+    UniversalBle.onConnectionChange = (String dId, bool isConnected, String? error) {
+      print("🔌 Mudança de conexão detectada para $dId: Conectado=$isConnected. Erro=$error");
       if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
-        bool connected = (state == BleConnectionState.connected);
-        setState(() { _isConectado = connected; if (!connected) { _deviceAlvo = null; _isProdutoMileto = false; } });
+        setState(() {
+          _isConectado = isConnected;
+          if (!isConnected) {
+            _deviceAlvo = null;
+            _isProdutoMileto = false;
+          }
+        });
       }
     };
   }
 
   Future<void> _inicializarEConectarBluetooth() async {
-    if (_isConectado && _deviceAlvo != null) { await UniversalBle.disconnect(_deviceAlvo!.deviceId); return; }
-    setState(() { _isCarregando = true; _isProdutoMileto = false; });
+    if (_isConectado && _deviceAlvo != null) {
+      try {
+        await UniversalBle.disconnect(_deviceAlvo!.deviceId);
+      } catch (e) {
+        print("Aviso ao desconectar: $e");
+      }
+      setState(() {
+        _isConectado = false;
+        _isProdutoMileto = false;
+        _isCarregando = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCarregando = true;
+      _isProdutoMileto = false;
+      _isConectado = false;
+    });
+    _macsVistos.clear();
+
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    if (statuses[Permission.bluetoothScan]?.isGranted != true ||
+        statuses[Permission.bluetoothConnect]?.isGranted != true) {
+      setState(() { _isCarregando = false; });
+      _mostrarFeedback("⚠️ Permissões de Bluetooth negadas.");
+      return;
+    }
+
     try {
+      print("Iniciando escaneamento de hardware...");
       await UniversalBle.startScan();
+
       Completer<BleDevice> c = Completer();
       UniversalBle.onScanResult = (device) {
-        if (device.name?.contains("MILETO") == true) if (!c.isCompleted) c.complete(device);
+        String deviceName = device.name ?? 'Sem Nome';
+        String mac = device.deviceId.toUpperCase();
+        int rssi = device.rssi ?? -100;
+
+        if (!_macsVistos.contains(mac)) {
+          _macsVistos.add(mac);
+          print("Dispositivo detectado: $deviceName | ID: $mac | Sinal RSSI: $rssi");
+        }
+
+        if (deviceName.toUpperCase().contains("MILETO")) {
+          print("🎯 Placa MILETO real detectada com sinal ($rssi dBm)! Conectando... $mac");
+          _deviceAlvo = device;
+          if (!c.isCompleted) {
+            c.complete(device);
+          }
+        }
       };
-      _deviceAlvo = await c.future.timeout(const Duration(seconds: 10));
+
+      _deviceAlvo = await c.future.timeout(const Duration(seconds: 15));
       await UniversalBle.stopScan();
+
+      print("🛑 Scan parado. Aguardando estabilização da pilha BT...");
+      await Future.delayed(const Duration(milliseconds: 800));
+
       if (_deviceAlvo != null) {
-        await UniversalBle.connect(_deviceAlvo!.deviceId);
+        int tentativas = 0;
+        bool conectadoComSucesso = false;
+
+        while (tentativas < 3 && !conectadoComSucesso) {
+          tentativas++;
+          try {
+            final dispositivoAtual = _deviceAlvo;
+            if (dispositivoAtual == null) break;
+
+            print("⚡ [Tentativa $tentativas/3] Conectando ao ID: ${dispositivoAtual.deviceId}...");
+            await UniversalBle.connect(dispositivoAtual.deviceId);
+
+            conectadoComSucesso = true;
+          } catch (e) {
+            print("⚠️ Falha na tentativa $tentativas: $e");
+            if (tentativas >= 3) rethrow;
+
+            print("⏳ Aguardando 1.5s antes de re-tentar...");
+            await Future.delayed(const Duration(milliseconds: 1500));
+          }
+        }
+
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        print("🔍 Descobrindo serviços...");
         await UniversalBle.discoverServices(_deviceAlvo!.deviceId);
+
+        print("🔔 Ativando canal de comunicação TX...");
         await UniversalBle.setNotifiable(_deviceAlvo!.deviceId, _serviceUuid, _txUuid, BleInputProperty.notification);
-        setState(() { _isConectado = true; _isCarregando = false; });
+
+        setState(() {
+          _isConectado = true;
+          _isProdutoMileto = true;
+          _isCarregando = false;
+        });
+
+        print("🚀 Conexão estabelecida com sucesso!");
       }
     } catch (e) {
-      await UniversalBle.stopScan();
-      setState(() { _isConectado = false; _isCarregando = false; });
-      _mostrarFeedback("Erro ao conectar.");
+      try { await UniversalBle.stopScan(); } catch (_) {}
+      setState(() {
+        _isConectado = false;
+        _isCarregando = false;
+        _isProdutoMileto = false;
+        _deviceAlvo = null;
+      });
+      _mostrarFeedback("Falha ao parear com o hardware.");
+      print("Erro final no escaneamento/conexão: $e");
     }
   }
 
@@ -185,15 +296,37 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text("MILETO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
         actions: [
-          if (_isCarregando) const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
-          else IconButton(icon: Icon(_isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled, color: _isConectado ? Colors.greenAccent : Colors.redAccent), onPressed: _inicializarEConectarBluetooth)
+          if (_isCarregando)
+            const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+          else
+            IconButton(
+                icon: Icon(_isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled, color: _isConectado ? Colors.greenAccent : Colors.redAccent),
+                onPressed: _inicializarEConectarBluetooth
+            )
         ],
         centerTitle: true,
         backgroundColor: const Color(0xFF1E1E1E),
       ),
       body: SafeArea(
-        child: !_isConectado ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE PARA CONECTAR)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
-            : !_isProdutoMileto ? _buildTelaProdutoNaoEncontrado()
+        child: _isCarregando
+            ? const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.amber),
+              SizedBox(height: 16),
+              Text("Configurando...", style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        )
+            : (_isConectado == false && _isCarregando == false)
+            ? const Center(
+            child: Text("DESCONECTADO\n(TOQUE NO ÍCONE PARA CONECTAR)",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey))
+        )
+            : !_isProdutoMileto
+            ? _buildTelaProdutoNaoEncontrado()
             : SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -202,14 +335,36 @@ class _HomeScreenState extends State<HomeScreen> {
               Card(
                 color: const Color(0xFF1E1E1E),
                 child: ListTile(
-                  title: Text(modoDMX ? "MODO DMX ATIVO" : "MODO MANUAL / RF", style: TextStyle(fontWeight: FontWeight.bold, color: modoDMX ? Colors.cyan : Colors.amber)),
-                  trailing: Switch(value: modoDMX, activeColor: Colors.cyan, onChanged: (v) { setState(() => modoDMX = v); enviarComando("CHAVE_MODO", modoDMX ? "DMX" : "RF"); }),
+                  title: Text(modoDMX ? "MODO DMX ATIVO" : "MODO MANUAL / RF",
+                      style: TextStyle(fontWeight: FontWeight.bold,
+                          color: modoDMX ? Colors.cyan : Colors.amber)),
+                  trailing: Switch(
+                      value: modoDMX,
+                      activeColor: Colors.cyan,
+                      onChanged: (v) {
+                        setState(() => modoDMX = v);
+                        enviarComando("CHAVE_MODO", modoDMX ? "DMX" : "RF");
+                      }
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
-              AnimatedSwitcher(duration: const Duration(milliseconds: 300), child: modoDMX ? _buildPainelDMX() : _buildPainelManuais()),
+              AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: modoDMX ? _buildPainelDMX() : _buildPainelManuais()
+              ),
               const SizedBox(height: 16),
-              ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), icon: const Icon(Icons.save), label: const Text("GRAVAR NA MEMÓRIA"), onPressed: () => enviarComando("GRAVAR", "1")),
+              ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                  icon: const Icon(Icons.save),
+                  label: const Text("GRAVAR NA MEMÓRIA"),
+                  onPressed: () => enviarComando("GRAVAR", "1")
+              ),
               const SizedBox(height: 24),
               _buildSimuladorPistaLed(),
             ],
@@ -241,7 +396,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPainelDMX() {
-    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(20.0), child: Column(children: [const Text("ENDEREÇO DMX ATUAL", style: TextStyle(color: Colors.grey)), Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)), const Text("(Ajuste via Encoder)", style: TextStyle(color: Colors.white24, fontSize: 11))])));
+    return Card(
+        color: const Color(0xFF1E1E1E),
+        child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+                children: [
+                  const Text("ENDEREÇO DMX ATUAL", style: TextStyle(color: Colors.grey)),
+                  Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)),
+                  const Text("(Ajuste via Encoder)", style: TextStyle(color: Colors.white24, fontSize: 11))
+                ]
+            )
+        )
+    );
   }
 
   Widget _buildPainelManuais() {
@@ -259,7 +426,18 @@ class _HomeScreenState extends State<HomeScreen> {
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 2.2),
               itemBuilder: (context, index) {
                 final bool sel = modoAtual == index;
-                return ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white, padding: EdgeInsets.zero), onPressed: () { setState(() => modoAtual = index); enviarComando("SET_MODO", "$modoAtual"); }, child: Text(modosLista[index], style: const TextStyle(fontSize: 10)));
+                return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E),
+                        foregroundColor: sel ? Colors.black : Colors.white,
+                        padding: EdgeInsets.zero
+                    ),
+                    onPressed: () {
+                      setState(() => modoAtual = index);
+                      enviarComando("SET_MODO", "$modoAtual");
+                    },
+                    child: Text(modosLista[index], style: const TextStyle(fontSize: 10))
+                );
               },
             ),
           ),
@@ -272,15 +450,41 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.all(12.0),
               child: Column(
                 children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: List.generate(4, (index) {
-                    final int canal = index + 1;
-                    final bool sel = canalManualSelecionado == canal;
-                    return Expanded(child: Padding(padding: EdgeInsets.only(right: index < 3 ? 8 : 0), child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white70, padding: EdgeInsets.zero), onPressed: () => setState(() => canalManualSelecionado = canal), child: Text("CH$canal"))));
-                  })),
+                  Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(4, (index) {
+                        final int canal = index + 1;
+                        final bool sel = canalManualSelecionado == canal;
+                        return Expanded(
+                            child: Padding(
+                                padding: EdgeInsets.only(right: index < 3 ? 8 : 0),
+                                child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E),
+                                        foregroundColor: sel ? Colors.black : Colors.white70,
+                                        padding: EdgeInsets.zero
+                                    ),
+                                    onPressed: () => setState(() => canalManualSelecionado = canal),
+                                    child: Text("CH$canal")
+                                )
+                            )
+                        );
+                      })
+                  ),
                   const Divider(height: 32, color: Colors.white10),
-                  _buildSliderRow("BRILHO CANAL $canalManualSelecionado", brilhoCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val), "SET_CH$canalManualSelecionado"),
+                  _buildSliderRow(
+                      "BRILHO CANAL $canalManualSelecionado",
+                      brilhoCanaisManuais[canalManualSelecionado - 1],
+                          (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val),
+                      "SET_CH$canalManualSelecionado"
+                  ),
                   const SizedBox(height: 12),
-                  _buildSliderRow("VELOCIDADE CANAL $canalManualSelecionado", velocidadesCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val), "SET_VCH$canalManualSelecionado"),
+                  _buildSliderRow(
+                      "VELOCIDADE CANAL $canalManualSelecionado",
+                      velocidadesCanaisManuais[canalManualSelecionado - 1],
+                          (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val),
+                      "SET_VCH$canalManualSelecionado"
+                  ),
                 ],
               ),
             ),
@@ -299,8 +503,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSliderRow(String label, double val, Function(double) onCh, String cmd) {
     return Column(
       children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
-        Slider(value: val, min: 0, max: 100, divisions: 100, activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")),
+        Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 11)),
+              Text("${val.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))
+            ]
+        ),
+        Slider(
+            value: val,
+            min: 0,
+            max: 100,
+            divisions: 100,
+            activeColor: Colors.amber,
+            onChanged: onCh,
+            onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")
+        ),
       ],
     );
   }
@@ -319,13 +537,29 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text("SIMULAÇÃO DE PLACAS", style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
-              DropdownButton<int>(value: tamanhoGrade, dropdownColor: const Color(0xFF1E1E1E), items: [3, 4, 5, 6].map((int i) => DropdownMenuItem(value: i, child: Text("${i}x$i  "))).toList(), onChanged: (v) => setState(() => tamanhoGrade = v!)),
+              DropdownButton<int>(
+                  value: tamanhoGrade,
+                  dropdownColor: const Color(0xFF1E1E1E),
+                  items: [3, 4, 5, 6].map((int i) => DropdownMenuItem(value: i, child: Text("${i}x$i  "))).toList(),
+                  onChanged: (v) => setState(() => tamanhoGrade = v!)
+              ),
             ],
           ),
           const SizedBox(height: 12),
-          Container(width: 200, height: 200, decoration: BoxDecoration(color: const Color(0xFF0A0A0A), borderRadius: BorderRadius.circular(8)), child: CustomPaint(painter: LedGridPainter(gridSize: tamanhoGrade, niveisCanais: niveisReaisCanais))),
+          Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(color: const Color(0xFF0A0A0A), borderRadius: BorderRadius.circular(8)),
+              child: CustomPaint(painter: LedGridPainter(gridSize: tamanhoGrade, niveisCanais: niveisReaisCanais))
+          ),
           const SizedBox(height: 12),
-          Row(children: [Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "START"), child: const Text("TESTAR"))), const SizedBox(width: 8), Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "CLEAR"), child: const Text("APAGAR")))]),
+          Row(
+              children: [
+                Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "START"), child: const Text("TESTAR"))),
+                const SizedBox(width: 8),
+                Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "CLEAR"), child: const Text("APAGAR")))
+              ]
+          ),
         ],
       ),
     );
@@ -344,8 +578,9 @@ class LedGridPainter extends CustomPainter {
       int chF = (r + c) % 2 == 0 ? 0 : 2, chQ = (r + c) % 2 == 0 ? 1 : 3;
       double nf = niveisCanais[chF] / 100.0, nq = niveisCanais[chQ] / 100.0;
       final Rect rect = Rect.fromLTWH(c * sw, r * sh, sw - 2, sh - 2);
-      if (nf == 0 && nq == 0) canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
-      else {
+      if (nf == 0 && nq == 0) {
+        canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
+      } else {
         double t = (nf + nq).clamp(0.001, 2.0);
         int red = ((224 * nf + 255 * nq) / t).round(), green = ((232 * nf + 227 * nq) / t).round(), blue = ((255 * nf + 163 * nq) / t).round();
         canvas.drawRect(rect, Paint()..color = Color.fromARGB(255, red, green, blue).withOpacity((t / 1.5).clamp(0.3, 1.0)));
