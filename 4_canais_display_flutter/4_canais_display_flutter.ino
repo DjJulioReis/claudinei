@@ -29,9 +29,8 @@ Preferences preferences;
 #define DMX_TX_PIN 21
 
 // Controle de direção do transceptor RS-485 para RDM
-// Nota: Se usar um módulo com controle de fluxo automático (ex: MAX13487),
-// este pino não é necessário. Caso use MAX485 tradicional, defina um pino livre (ex: GPIO 3 ou 10)
-#define RS485_DIR_PIN -1 // Definir GPIO se necessário para DE/RE físico
+// Como o botão DMX Manual foi removido, liberamos o GPIO 3 para ser o controle de fluxo DE/RE do MAX485
+#define RS485_DIR_PIN 3
 
 static QueueHandle_t dmx_queue;
 uint8_t raw_dmx_buf[515];
@@ -59,7 +58,6 @@ bool novoComandoBle = false;
 #define BTN_FRENTE 7
 #define BTN_VOLTA 10
 #define BTN_GRAVAR 2
-#define CHAVE_DMX_MANUAL 3   // Pino do botão alternador de modo DMX/Manual
 
 #define PWM_FREQ 4000
 #define PWM_RES 8
@@ -144,7 +142,6 @@ void setup() {
   pinMode(BTN_FRENTE, INPUT_PULLUP);
   pinMode(BTN_VOLTA, INPUT_PULLUP);
   pinMode(BTN_GRAVAR, INPUT_PULLUP);
-  pinMode(CHAVE_DMX_MANUAL, INPUT_PULLUP);
 
   if (RS485_DIR_PIN != -1) {
     pinMode(RS485_DIR_PIN, OUTPUT);
@@ -239,35 +236,6 @@ void loop() {
     processarBluetooth();
     novoComandoBle = false;
     comandoPendente = "";
-  }
-
-  if (digitalRead(CHAVE_DMX_MANUAL) == LOW) {
-    delay(50);
-    if (digitalRead(CHAVE_DMX_MANUAL) == LOW) {
-      if (millis() - ultimoDebounce >= 250) {
-        ultimoDebounce = millis();
-        acordaTela();
-        sistemaEmModoDMX = !sistemaEmModoDMX;
-
-        if (!sistemaEmModoDMX) {
-          preferences.begin("mileto_cfg", true);
-          modoAtual = preferences.getInt("modo", 0);
-          velocidad = preferences.getInt("vel", 100);
-          brilhoGeral = preferences.getInt("dim", 255);
-          brilhoCanais[0] = preferences.getInt("ch1", 255);
-          brilhoCanais[1] = preferences.getInt("ch2", 255);
-          brilhoCanais[2] = preferences.getInt("ch3", 255);
-          brilhoCanais[3] = preferences.getInt("ch4", 255);
-          velocidadesCanais[0] = preferences.getInt("vch1", 100);
-          velocidadesCanais[1] = preferences.getInt("vch2", 100);
-          velocidadesCanais[2] = preferences.getInt("vch3", 100);
-          velocidadesCanais[3] = preferences.getInt("vch4", 100);
-          preferences.end();
-        }
-        atualizarDisplay();
-        while (digitalRead(CHAVE_DMX_MANUAL) == LOW) { delay(10); }
-      }
-    }
   }
 
   if (!sistemaEmModoDMX) {
