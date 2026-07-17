@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial_ble/flutter_bluetooth_serial_ble.dart';
 import 'main.dart';
@@ -12,8 +13,10 @@ class ConectaPage extends StatefulWidget {
 class _ConectaPageState extends State<ConectaPage> {
   String? perfilSelecionado = "Pista Geral (Padrão)";
   bool buscandoDispositivos = false;
+  bool conexaoAutomaticaFalhou = false;
   List<BluetoothDevice> dispositivosEncontrados = [];
   BluetoothDevice? dispositivoSelecionado;
+  Timer? _timerBusca;
 
   final List<Map<String, dynamic>> perfisDisponiveis = [
     {
@@ -41,34 +44,76 @@ class _ConectaPageState extends State<ConectaPage> {
   @override
   void initState() {
     super.initState();
-    _carregarDispositivosPareados();
+    _iniciarDescobertaAutomatica();
   }
 
-  Future<void> _carregarDispositivosPareados() async {
+  @override
+  void dispose() {
+    _timerBusca?.cancel();
+    super.dispose();
+  }
+
+  // --- BUSCA AUTOMÁTICA DE CONSOLE MILETO NO BOOT ---
+  Future<void> _iniciarDescobertaAutomatica() async {
     setState(() {
       buscandoDispositivos = true;
+      conexaoAutomaticaFalhou = false;
+      dispositivosEncontrados.clear();
     });
 
     try {
+      // 1. Pede a lista de dispositivos já pareados com o celular
       List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
-      setState(() {
-        dispositivosEncontrados = bonded;
-        if (bonded.isNotEmpty) {
-          // Tenta pré-selecionar o primeiro dispositivo ou um que chame MILETO
-          dispositivoSelecionado = bonded.firstWhere(
-            (dev) => dev.name != null && dev.name!.contains("MILETO"),
-            orElse: () => bonded.first,
-          );
-        }
-        buscandoDispositivos = false;
-      });
+
+      // 2. Procura se algum deles tem o nome "MILETO"
+      List<BluetoothDevice> miletoDevices = bonded.where(
+        (dev) => dev.name != null && dev.name!.toUpperCase().contains("MILETO")
+      ).toList();
+
+      if (miletoDevices.isNotEmpty) {
+        // Se achou automaticamente, conecta e abre
+        setState(() {
+          dispositivosEncontrados = bonded;
+          dispositivoSelecionado = miletoDevices.first;
+          buscandoDispositivos = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green,
+            content: Text("Console '${dispositivoSelecionado!.name}' encontrado automaticamente! Conectando..."),
+          ),
+        );
+
+        // Aguarda 1.5s para dar uma experiência visual fluida e inicia o HomeScreen
+        _timerBusca = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const HomeScreen()),
+            );
+          }
+        });
+      } else {
+        // Se não achou nenhum com o padrão MILETO nos pareados, tenta carregar todos para escolha manual
+        setState(() {
+          dispositivosEncontrados = bonded;
+          if (bonded.isNotEmpty) dispositivoSelecionado = bonded.first;
+          buscandoDispositivos = false;
+          conexaoAutomaticaFalhou = true; // Exibe o botão de conexão manual
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.orange,
+            content: Text("Nenhum console MILETO detectado automaticamente. Use a conexão manual."),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         buscandoDispositivos = false;
+        conexaoAutomaticaFalhou = true;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erro ao carregar dispositivos pareados.")),
-      );
     }
   }
 
@@ -90,82 +135,94 @@ class _ConectaPageState extends State<ConectaPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Center(
-              child: Icon(Icons.bluetooth_searching, size: 60, color: Colors.amber),
+            Center(
+              child: buscandoDispositivos
+                  ? const Column(
+                      children: [
+                        SizedBox(height: 20),
+                        CircularProgressIndicator(color: Colors.amber),
+                        SizedBox(height: 16),
+                        Text(
+                          "Buscando consoles MILETO automaticamente...",
+                          style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13),
+                        )
+                      ],
+                    )
+                  : const Icon(Icons.bluetooth_searching, size: 60, color: Colors.amber),
             ),
             const SizedBox(height: 12),
             const Text(
-              "Selecione um console e escolha o perfil de funcionamento antes de abrir a mesa de controle principal.",
+              "O sistema tenta detectar o seu console MILETO automaticamente. Caso ele não seja encontrado, você pode selecioná-lo de forma manual abaixo.",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey, fontSize: 13),
             ),
             const SizedBox(height: 24),
 
-            // --- CONTAINER SELEÇÃO DE APARELHO ---
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "DISPOSITIVO ALVO (PAREADOS)",
-                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11),
-                      ),
-                      buscandoDispositivos
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
-                          : IconButton(
-                              icon: const Icon(Icons.refresh, color: Colors.amber, size: 18),
-                              onPressed: _carregarDispositivosPareados,
-                            ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  dispositivosEncontrados.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            "Nenhum console pareado no sistema! Por favor, pareie o dispositivo 'MILETO' nas configurações de Bluetooth do seu celular.",
-                            style: TextStyle(color: Colors.redAccent, fontSize: 12),
-                          ),
-                        )
-                      : DropdownButtonHideUnderline(
-                          child: DropdownButton<BluetoothDevice>(
-                            isExpanded: true,
-                            value: dispositivoSelecionado,
-                            dropdownColor: const Color(0xFF1E1E1E),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                            items: dispositivosEncontrados.map((BluetoothDevice value) {
-                              return DropdownMenuItem<BluetoothDevice>(
-                                value: value,
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.bluetooth, color: Colors.greenAccent, size: 18),
-                                    const SizedBox(width: 10),
-                                    Text(value.name ?? "Dispositivo sem nome"),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (novoDispositivo) {
-                              setState(() {
-                                dispositivoSelecionado = novoDispositivo;
-                              });
-                            },
-                          ),
+            // --- EXIBIÇÃO DE ACORDO COM O STATUS DA BUSCA ---
+            if (conexaoAutomaticaFalhou) ...[
+              // --- CONTAINER SELEÇÃO DE APARELHO MANUAL ---
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "CONEXÃO MANUAL BLUETOOTH",
+                          style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
                         ),
-                ],
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.amber, size: 18),
+                          onPressed: _iniciarBuscaManual,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    dispositivosEncontrados.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              "Nenhum dispositivo Bluetooth pareado no celular! Por favor, ative o Bluetooth e pareie a mesa nas configurações do Android/iOS.",
+                              style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                            ),
+                          )
+                        : DropdownButtonHideUnderline(
+                            child: DropdownButton<BluetoothDevice>(
+                              isExpanded: true,
+                              value: dispositivoSelecionado,
+                              dropdownColor: const Color(0xFF1E1E1E),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              items: dispositivosEncontrados.map((BluetoothDevice value) {
+                                return DropdownMenuItem<BluetoothDevice>(
+                                  value: value,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.bluetooth, color: Colors.greenAccent, size: 18),
+                                      const SizedBox(width: 10),
+                                      Text(value.name ?? "Dispositivo sem nome"),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (novoDispositivo) {
+                                setState(() {
+                                  dispositivoSelecionado = novoDispositivo;
+                                });
+                              },
+                            ),
+                          ),
+                  ],
+                ),
               ),
-            ),
-
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
 
             // --- CONTAINER SELEÇÃO DE PERFIL ---
             const Text(
@@ -266,5 +323,23 @@ class _ConectaPageState extends State<ConectaPage> {
         ),
       ),
     );
+  }
+
+  void _iniciarBuscaManual() async {
+    setState(() {
+      buscandoDispositivos = true;
+    });
+    try {
+      List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
+      setState(() {
+        dispositivosEncontrados = bonded;
+        if (bonded.isNotEmpty) dispositivoSelecionado = bonded.first;
+        buscandoDispositivos = false;
+      });
+    } catch (e) {
+      setState(() {
+        buscandoDispositivos = false;
+      });
+    }
   }
 }
