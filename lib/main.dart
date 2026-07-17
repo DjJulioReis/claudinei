@@ -89,7 +89,8 @@ class _SplashScreenState extends State<SplashScreen> {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final BluetoothConnection? connection;
+  const HomeScreen({super.key, this.connection});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -129,7 +130,74 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _inicializarEConectarBluetooth();
+    if (widget.connection != null) {
+      _connection = widget.connection;
+      _isConectado = _connection!.isConnected;
+      _configurarListenerBluetooth();
+    } else {
+      _inicializarEConectarBluetooth();
+    }
+  }
+
+  void _configurarListenerBluetooth() {
+    _connection!.input?.listen((data) {
+      _bufferDadosIncompletos += utf8.decode(data);
+
+      while (_bufferDadosIncompletos.contains('\n')) {
+        int posicaoQuebra = _bufferDadosIncompletos.indexOf('\n');
+        String linhaComando = _bufferDadosIncompletos.substring(0, posicaoQuebra).trim();
+        _bufferDadosIncompletos = _bufferDadosIncompletos.substring(posicaoQuebra + 1);
+
+        if (linhaComando.isEmpty) continue;
+
+        if (linhaComando.startsWith("CH_LEVELS:")) {
+          String dados = linhaComando.replaceAll("CH_LEVELS:", "");
+          List<String> niveis = dados.split(",");
+          if (niveis.length >= 4) {
+            setState(() {
+              niveisReaisCanais = List.generate(4, (i) => double.tryParse(niveis[i]) ?? 0.0);
+              executandoEfeito = niveisReaisCanais.any((v) => v > 0);
+            });
+          }
+        }
+        else if (linhaComando.contains("CONNECTED_OK")) {
+          setState(() => _isConectado = true);
+          _mostrarFeedback("MILETO Conectada! Insira a senha de acesso.");
+          enviarComando("GET_CAPABILITIES", "1");
+        }
+        else if (linhaComando.startsWith("CAPS:")) {
+          String listaEfeitos = linhaComando.replaceAll("CAPS:", "");
+          setState(() {
+            modosLista = listaEfeitos.split(",");
+          });
+        }
+        else if (linhaComando.startsWith("CHAVE_MODO:")) {
+          String modoVindoDaPlaca = linhaComando.replaceAll("CHAVE_MODO:", "");
+          setState(() {
+            modoDMX = (modoVindoDaPlaca == "DMX");
+          });
+          _mostrarFeedback(modoDMX ? "Modo Alterado: Mesa DMX" : "Modo Alterado: Controle Bluetooth");
+        }
+        else if (linhaComando.contains("[MEMORIA]") || linhaComando.contains("GRAVAR:OK")) {
+          _mostrarFeedback("💾 Configurações gravadas com sucesso!");
+        }
+      }
+    }).onDone(() {
+      setState(() {
+        _isConectado = false;
+        _connection = null;
+        modosLista.clear();
+        _bufferDadosIncompletos = "";
+        _painelLiberado = false;
+        _inicializarPistaLeds();
+      });
+      _mostrarFeedback("A placa foi desconectada.");
+    });
+
+    enviarComando("GET_CAPABILITIES", "1");
+    setState(() {
+      _painelLiberado = true; // Já vem autenticado do conecta.dart
+    });
   }
 
   void _inicializarPistaLeds() {
