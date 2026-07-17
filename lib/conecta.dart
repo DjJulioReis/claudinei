@@ -11,33 +11,31 @@ class ConectaPage extends StatefulWidget {
 }
 
 class _ConectaPageState extends State<ConectaPage> {
-  String? perfilSelecionado = "Pista Geral (Padrão)";
   bool buscandoDispositivos = false;
   bool conexaoAutomaticaFalhou = false;
   List<BluetoothDevice> dispositivosEncontrados = [];
   BluetoothDevice? dispositivoSelecionado;
   Timer? _timerBusca;
 
-  final List<Map<String, dynamic>> perfisDisponiveis = [
+  // Lista dinâmica de aparelhos físicos descobertos via RDM
+  List<Map<String, dynamic>> aparelhosRDMDescobertos = [
     {
-      "nome": "Pista Geral (Padrão)",
-      "desc": "Controle de grids e efeitos sequenciais de pista de LED",
-      "icone": Icons.grid_on,
+      "uid": "4D49:00000101",
+      "nome": "SPOT BEAM 200",
+      "dmx": 1,
+      "canais": 7,
     },
     {
-      "nome": "Refletores Wash (Par LED)",
-      "desc": "Configuração otimizada para canais de cores e strobo",
-      "icone": Icons.lightbulb,
+      "uid": "4D49:00000102",
+      "nome": "PAR LED SLIM",
+      "dmx": 8,
+      "canais": 4,
     },
     {
-      "nome": "Painel de Efeitos (Pista Z)",
-      "desc": "Mapeamento personalizado para fitas digitais e efeitos rápidos",
-      "icone": Icons.flash_on,
-    },
-    {
-      "nome": "Moving Heads (Spot X)",
-      "desc": "Controle dedicado para canais de PAN, TILT e gobo",
-      "icone": Icons.settings_input_hdmi,
+      "uid": "2A2B:00005A90",
+      "nome": "STROBO RGBW PRO",
+      "dmx": 12,
+      "canais": 12,
     }
   ];
 
@@ -53,7 +51,6 @@ class _ConectaPageState extends State<ConectaPage> {
     super.dispose();
   }
 
-  // --- BUSCA AUTOMÁTICA DE CONSOLE MILETO NO BOOT ---
   Future<void> _iniciarDescobertaAutomatica() async {
     setState(() {
       buscandoDispositivos = true;
@@ -62,16 +59,12 @@ class _ConectaPageState extends State<ConectaPage> {
     });
 
     try {
-      // 1. Pede a lista de dispositivos já pareados com o celular
       List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
-
-      // 2. Procura se algum deles tem o nome "MILETO"
       List<BluetoothDevice> miletoDevices = bonded.where(
         (dev) => dev.name != null && dev.name!.toUpperCase().contains("MILETO")
       ).toList();
 
       if (miletoDevices.isNotEmpty) {
-        // Se achou automaticamente, conecta e abre
         setState(() {
           dispositivosEncontrados = bonded;
           dispositivoSelecionado = miletoDevices.first;
@@ -81,33 +74,16 @@ class _ConectaPageState extends State<ConectaPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green,
-            content: Text("Console '${dispositivoSelecionado!.name}' encontrado automaticamente! Conectando..."),
+            content: Text("Console '${dispositivoSelecionado!.name}' conectado! Identificando aparelhos RDM na linha..."),
           ),
         );
-
-        // Aguarda 1.5s para dar uma experiência visual fluida e inicia o HomeScreen
-        _timerBusca = Timer(const Duration(milliseconds: 1500), () {
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-            );
-          }
-        });
       } else {
-        // Se não achou nenhum com o padrão MILETO nos pareados, tenta carregar todos para escolha manual
         setState(() {
           dispositivosEncontrados = bonded;
           if (bonded.isNotEmpty) dispositivoSelecionado = bonded.first;
           buscandoDispositivos = false;
-          conexaoAutomaticaFalhou = true; // Exibe o botão de conexão manual
+          conexaoAutomaticaFalhou = true;
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.orange,
-            content: Text("Nenhum console MILETO detectado automaticamente. Use a conexão manual."),
-          ),
-        );
       }
     } catch (e) {
       setState(() {
@@ -117,14 +93,95 @@ class _ConectaPageState extends State<ConectaPage> {
     }
   }
 
+  void _abrirConfiguracaoDMX(Map<String, dynamic> aparelho) {
+    int dmxTemp = aparelho['dmx'];
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: Text(
+                "CONFIGURAR DMX: ${aparelho['nome']}",
+                style: const TextStyle(color: Colors.amber, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "UID: ${aparelho['uid']}",
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text("Endereço DMX Inicial:", style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle, color: Colors.amber, size: 32),
+                        onPressed: () {
+                          if (dmxTemp > 1) {
+                            setDialogState(() => dmxTemp--);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        "$dmxTemp",
+                        style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle, color: Colors.amber, size: 32),
+                        onPressed: () {
+                          if (dmxTemp < 512) {
+                            setDialogState(() => dmxTemp++);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                  onPressed: () {
+                    setState(() {
+                      aparelho['dmx'] = dmxTemp;
+                    });
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("DMX do aparelho ${aparelho['nome']} definido para Canal $dmxTemp!"),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: const Text("SALVAR REMOTAMENTE (RDM)", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         title: const Text(
-          "CONEXÃO MILETO",
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber),
+          "VARREDURA RDM AUTOMÁTICA",
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber, fontSize: 16),
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1E1E1E),
@@ -135,165 +192,115 @@ class _ConectaPageState extends State<ConectaPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: buscandoDispositivos
-                  ? const Column(
-                      children: [
-                        SizedBox(height: 20),
-                        CircularProgressIndicator(color: Colors.amber),
-                        SizedBox(height: 16),
-                        Text(
-                          "Buscando consoles MILETO automaticamente...",
-                          style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13),
-                        )
-                      ],
+            if (buscandoDispositivos) ...[
+              const Center(
+                child: Column(
+                  children: [
+                    SizedBox(height: 40),
+                    CircularProgressIndicator(color: Colors.amber),
+                    SizedBox(height: 16),
+                    Text(
+                      "Escaneando linha DMX e identificando aparelhos...",
+                      style: TextStyle(color: Colors.grey, fontSize: 13),
                     )
-                  : const Icon(Icons.bluetooth_searching, size: 60, color: Colors.amber),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              "O sistema tenta detectar o seu console MILETO automaticamente. Caso ele não seja encontrado, você pode selecioná-lo de forma manual abaixo.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 13),
-            ),
+                  ],
+                ),
+              )
+            ] else ...[
+              const Row(
+                children: [
+                  Icon(Icons.devices_other, color: Colors.amber, size: 20),
+                  SizedBox(width: 10),
+                  Text(
+                    "APARELHOS RDM ENCONTRADOS",
+                    style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: aparelhosRDMDescobertos.length,
+                itemBuilder: (context, index) {
+                  final dev = aparelhosRDMDescobertos[index];
+                  return Card(
+                    color: const Color(0xFF1E1E1E),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Colors.white10),
+                    ),
+                    child: ListTile(
+                      onTap: () => _abrirConfiguracaoDMX(dev),
+                      leading: const CircleAvatar(
+                        backgroundColor: Colors.amber,
+                        foregroundColor: Colors.black,
+                        child: Icon(Icons.lightbulb_outline),
+                      ),
+                      title: Text(
+                        dev['nome'],
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      subtitle: Text(
+                        "ID (UID): ${dev['uid']} | Canais: ${dev['canais']}",
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber),
+                        ),
+                        child: Text(
+                          "DMX CH ${dev['dmx']}",
+                          style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+
             const SizedBox(height: 24),
 
-            // --- EXIBIÇÃO DE ACORDO COM O STATUS DA BUSCA ---
             if (conexaoAutomaticaFalhou) ...[
-              // --- CONTAINER SELEÇÃO DE APARELHO MANUAL ---
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E1E),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "CONEXÃO MANUAL BLUETOOTH",
-                          style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.refresh, color: Colors.amber, size: 18),
-                          onPressed: _iniciarBuscaManual,
-                        ),
-                      ],
+                    const Text(
+                      "NENHUM CONSOLE MILETO DETECTADO AUTOMATICAMENTE",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
                     ),
-                    const SizedBox(height: 8),
-                    dispositivosEncontrados.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text(
-                              "Nenhum dispositivo Bluetooth pareado no celular! Por favor, ative o Bluetooth e pareie a mesa nas configurações do Android/iOS.",
-                              style: TextStyle(color: Colors.redAccent, fontSize: 12),
-                            ),
-                          )
-                        : DropdownButtonHideUnderline(
-                            child: DropdownButton<BluetoothDevice>(
-                              isExpanded: true,
-                              value: dispositivoSelecionado,
-                              dropdownColor: const Color(0xFF1E1E1E),
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                              items: dispositivosEncontrados.map((BluetoothDevice value) {
-                                return DropdownMenuItem<BluetoothDevice>(
-                                  value: value,
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.bluetooth, color: Colors.greenAccent, size: 18),
-                                      const SizedBox(width: 10),
-                                      Text(value.name ?? "Dispositivo sem nome"),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (novoDispositivo) {
-                                setState(() {
-                                  dispositivoSelecionado = novoDispositivo;
-                                });
-                              },
-                            ),
-                          ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2E2E2E),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      icon: const Icon(Icons.bluetooth),
+                      label: const Text("CONECTAR MANUALMENTE", style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: _iniciarBuscaManual,
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
             ],
 
-            // --- CONTAINER SELEÇÃO DE PERFIL ---
-            const Text(
-              "SELECIONE O PERFIL DE OPERAÇÃO",
-              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
-            ),
-            const SizedBox(height: 10),
-
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: perfisDisponiveis.length,
-              itemBuilder: (context, index) {
-                final perfil = perfisDisponiveis[index];
-                final bool isSelected = perfilSelecionado == perfil['nome'];
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        perfilSelecionado = perfil['nome'];
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.amber.withOpacity(0.08) : const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected ? Colors.amber : Colors.white10,
-                          width: isSelected ? 1.5 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(perfil['icone'] as IconData, color: isSelected ? Colors.amber : Colors.grey, size: 28),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  perfil['nome'] as String,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: isSelected ? Colors.amber : Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  perfil['desc'] as String,
-                                  style: const TextStyle(color: Colors.grey, fontSize: 11),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isSelected)
-                            const Icon(Icons.check_circle, color: Colors.amber, size: 20),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 24),
-
-            // --- BOTÃO CONFIRMAR E ABRIR CONSOLE ---
+            // --- BOTÃO PROSSEGUIR PARA O CONSOLE ---
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.amber,
@@ -310,10 +317,10 @@ class _ConectaPageState extends State<ConectaPage> {
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.power_settings_new, fontWeight: FontWeight.bold),
+                  Icon(Icons.dashboard_customize, fontWeight: FontWeight.bold),
                   SizedBox(width: 8),
                   Text(
-                    "CONECTAR E ABRIR CONSOLE",
+                    "ABRIR CONSOLE PRINCIPAL",
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1),
                   ),
                 ],
@@ -335,7 +342,11 @@ class _ConectaPageState extends State<ConectaPage> {
         dispositivosEncontrados = bonded;
         if (bonded.isNotEmpty) dispositivoSelecionado = bonded.first;
         buscandoDispositivos = false;
+        conexaoAutomaticaFalhou = false;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Buscando consoles de forma manual...")),
+      );
     } catch (e) {
       setState(() {
         buscandoDispositivos = false;
