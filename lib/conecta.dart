@@ -21,23 +21,61 @@ class _ConectaPageState extends State<ConectaPage> {
   // Autenticação Handshake
   bool _autenticado = false;
 
-  // Lista dinâmica de aparelhos RDM reais descobertos pelo ESP32-C3
+  // Lista de pareados do celular para fallback de conexão manual
+  List<BluetoothDevice> dispositivosPareados = [];
+  BluetoothDevice? dispositivoSelecionado;
+
+  // Lista dinâmica que conterá APENAS os aparelhos RDM físicos encontrados ou já salvos
   List<Map<String, dynamic>> aparelhosRDMDescobertos = [];
 
   @override
   void initState() {
     super.initState();
-    _inicializarEConectarBluetooth();
+    _carregarPareadosETentarConexaoAutomatica();
   }
 
-  @override
-  void dispose() {
-    // Atenção: Não fechamos a conexão aqui se formos passá-la para o HomeScreen!
-    super.dispose();
+  // --- CARREGAR DISPOSITIVOS PAREADOS DO CELULAR ---
+  Future<void> _carregarPareadosETentarConexaoAutomatica() async {
+    setState(() {
+      _isCarregando = true;
+    });
+
+    try {
+      List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
+      setState(() {
+        dispositivosPareados = bonded;
+      });
+
+      // Tenta achar se já existe um dispositivo pareado com o nome "MILETO"
+      BluetoothDevice? autoDevice;
+      for (var dev in bonded) {
+        if (dev.name != null && dev.name!.toUpperCase().contains(_nomeDispositivoAlvo)) {
+          autoDevice = dev;
+          break;
+        }
+      }
+
+      if (autoDevice != null) {
+        _conectarAoDispositivo(autoDevice);
+      } else {
+        setState(() {
+          _isCarregando = false;
+          if (bonded.isNotEmpty) {
+            dispositivoSelecionado = bonded.first;
+          }
+        });
+        _mostrarFeedback("Console 'MILETO' não achado automaticamente. Selecione-o manualmente abaixo.");
+      }
+    } catch (e) {
+      setState(() {
+        _isCarregando = false;
+      });
+      _mostrarFeedback("Erro ao carregar dispositivos do celular.");
+    }
   }
 
-  // --- CONEXÃO BLUETOOTH E PARSER RDM REAL ---
-  Future<void> _inicializarEConectarBluetooth() async {
+  // --- FUNÇÃO CENTRAL DE CONEXÃO AO DISPOSITIVO BLUETOOTH ---
+  Future<void> _conectarAoDispositivo(BluetoothDevice device) async {
     setState(() {
       _isCarregando = true;
       _autenticado = false;
@@ -45,92 +83,76 @@ class _ConectaPageState extends State<ConectaPage> {
     });
 
     try {
-      List<BluetoothDevice> bondedDevices = await FlutterBluetoothSerial.instance.getBondedDevices();
-      BluetoothDevice? dispositivoMileto;
+      BluetoothConnection connection = await BluetoothConnection.toAddress(device.address);
+      setState(() {
+        _connection = connection;
+        _isConectado = true;
+        _isCarregando = false;
+        dispositivoSelecionado = device;
+      });
 
-      for (var device in bondedDevices) {
-        if (device.name != null && device.name!.toUpperCase().contains(_nomeDispositivoAlvo)) {
-          dispositivoMileto = device;
-          break;
-        }
-      }
+      _connection!.input?.listen((data) {
+        _bufferDadosIncompletos += utf8.decode(data);
 
-      if (dispositivoMileto != null) {
-        BluetoothConnection connection = await BluetoothConnection.toAddress(dispositivoMileto.address);
+        while (_bufferDadosIncompletos.contains('\n')) {
+          int posicaoQuebra = _bufferDadosIncompletos.indexOf('\n');
+          String linhaComando = _bufferDadosIncompletos.substring(0, posicaoQuebra).trim();
+          _bufferDadosIncompletos = _bufferDadosIncompletos.substring(posicaoQuebra + 1);
 
-        setState(() {
-          _connection = connection;
-          _isConectado = true;
-          _isCarregando = false;
-        });
+          if (linhaComando.isEmpty) continue;
 
-        _connection!.input?.listen((data) {
-          _bufferDadosIncompletos += utf8.decode(data);
-
-          while (_bufferDadosIncompletos.contains('\n')) {
-            int posicaoQuebra = _bufferDadosIncompletos.indexOf('\n');
-            String linhaComando = _bufferDadosIncompletos.substring(0, posicaoQuebra).trim();
-            _bufferDadosIncompletos = _bufferDadosIncompletos.substring(posicaoQuebra + 1);
-
-            if (linhaComando.isEmpty) continue;
-
-            // Tratamento do Handshake de Autenticação
-            if (linhaComando.startsWith("AUTH_CHALLENGE:")) {
-              String desafioStr = linhaComando.replaceAll("AUTH_CHALLENGE:", "");
-              int? desafio = int.tryParse(desafioStr);
-              if (desafio != null) {
-                int resposta = (desafio * 2) + 7;
-                _enviarComando("AUTH_RESPONSE", "$resposta");
-              }
-            }
-            else if (linhaComando.contains("MILETO_AUTH:VALID")) {
-              setState(() {
-                _autenticado = true;
-              });
-              _mostrarFeedback("Conectado e Autenticado! Escaneando linha DMX...");
-              // Solicita varredura RDM
-              _enviarComando("VARREDURA_RDM", "1");
-            }
-            else if (linhaComando == "RDM_START") {
-              setState(() {
-                aparelhosRDMDescobertos.clear();
-              });
-            }
-            // Recebimento de equipamento RDM: RDM_DEV:fabricante,ID,DMX_CH,canais,nome
-            else if (linhaComando.startsWith("RDM_DEV:")) {
-              String dados = linhaComando.replaceAll("RDM_DEV:", "");
-              List<String> partes = dados.split(",");
-              if (partes.length >= 5) {
-                setState(() {
-                  aparelhosRDMDescobertos.add({
-                    "uid": "${partes[0].toUpperCase()}:${partes[1].toUpperCase()}",
-                    "nome": partes[4].replaceAll("_", " "),
-                    "dmx": int.tryParse(partes[2]) ?? 1,
-                    "canais": int.tryParse(partes[3]) ?? 1,
-                  });
-                });
-              }
-            }
-            else if (linhaComando == "RDM_END") {
-              _mostrarFeedback("Mapeamento RDM concluído! ${aparelhosRDMDescobertos.length} aparelhos encontrados.");
+          // Tratamento do Handshake de Autenticação
+          if (linhaComando.startsWith("AUTH_CHALLENGE:")) {
+            String desafioStr = linhaComando.replaceAll("AUTH_CHALLENGE:", "");
+            int? desafio = int.tryParse(desafioStr);
+            if (desafio != null) {
+              int resposta = (desafio * 2) + 7;
+              _enviarComando("AUTH_RESPONSE", "$resposta");
             }
           }
-        }).onDone(() {
-          setState(() {
-            _isConectado = false;
-            _connection = null;
-            _autenticado = false;
-            aparelhosRDMDescobertos.clear();
-          });
-          _mostrarFeedback("O console foi desconectado.");
+          else if (linhaComando.contains("MILETO_AUTH:VALID")) {
+            setState(() {
+              _autenticado = true;
+            });
+            _mostrarFeedback("Autenticação válida! Escaneando barramento DMX...");
+            _enviarComando("VARREDURA_RDM", "1");
+          }
+          else if (linhaComando == "RDM_START") {
+            setState(() {
+              aparelhosRDMDescobertos.clear();
+            });
+          }
+          // Recebimento de equipamento RDM: RDM_DEV:fabricante,ID,DMX_CH,canais,nome
+          else if (linhaComando.startsWith("RDM_DEV:")) {
+            String dados = linhaComando.replaceAll("RDM_DEV:", "");
+            List<String> partes = dados.split(",");
+            if (partes.length >= 5) {
+              setState(() {
+                aparelhosRDMDescobertos.add({
+                  "uid": "${partes[0].toUpperCase()}:${partes[1].toUpperCase()}",
+                  "nome": partes[4].replaceAll("_", " "),
+                  "dmx": int.tryParse(partes[2]) ?? 1,
+                  "canais": int.tryParse(partes[3]) ?? 1,
+                });
+              });
+            }
+          }
+          else if (linhaComando == "RDM_END") {
+            _mostrarFeedback("Varredura concluída! ${aparelhosRDMDescobertos.length} aparelhos encontrados.");
+          }
+        }
+      }).onDone(() {
+        setState(() {
+          _isConectado = false;
+          _connection = null;
+          _autenticado = false;
+          aparelhosRDMDescobertos.clear();
         });
+        _mostrarFeedback("O console foi desconectado.");
+      });
 
-      } else {
-        _mostrarFeedback("Console 'MILETO' não pareado no Bluetooth!");
-        setState(() => _isCarregando = false);
-      }
     } catch (e) {
-      _mostrarFeedback("Falha na conexão física com a mesa.");
+      _mostrarFeedback("Falha de conexão com o console.");
       setState(() {
         _isConectado = false;
         _isCarregando = false;
@@ -216,7 +238,7 @@ class _ConectaPageState extends State<ConectaPage> {
                     setState(() {
                       aparelho['dmx'] = dmxTemp;
                     });
-                    // Envia comando RDM real de setar endereço para a placa
+                    // Envia o comando DMX atualizado para a placa via RDM
                     _enviarComando("SET_DMX", "$dmxTemp");
                     Navigator.pop(context);
                     _mostrarFeedback("DMX do aparelho ${aparelho['nome']} definido para Canal $dmxTemp!");
@@ -251,7 +273,7 @@ class _ConectaPageState extends State<ConectaPage> {
                     _isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
                     color: _isConectado ? Colors.greenAccent : Colors.redAccent,
                   ),
-                  onPressed: _inicializarEConectarBluetooth,
+                  onPressed: _carregarPareadosETentarConexaoAutomatica,
                 )
         ],
         centerTitle: true,
@@ -264,35 +286,90 @@ class _ConectaPageState extends State<ConectaPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (!_isConectado) ...[
-              const SizedBox(height: 60),
+              const SizedBox(height: 30),
               const Center(
-                child: Icon(Icons.bluetooth_disabled, size: 80, color: Colors.redAccent),
+                child: Icon(Icons.bluetooth_disabled, size: 60, color: Colors.redAccent),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
-                "DESCONECTADO DO CONSOLE",
+                "CONSOLE DESCONECTADO",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15),
               ),
               const SizedBox(height: 8),
               const Text(
-                "Certifique-se de que a mesa MILETO está ligada e pareada no Bluetooth do celular. Em seguida, clique no ícone superior direito para conectar.",
+                "Ligue e pareie o Bluetooth do console MILETO nas configurações do seu celular.",
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 13),
+                style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
-              const SizedBox(height: 40),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 24),
+
+              // --- CONTAINER SELEÇÃO MANUAL CORRIGIDA ---
+              if (dispositivosPareados.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        "DISPOSITIVOS BLUETOOTH ENCONTRADOS",
+                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonHideUnderline(
+                        child: DropdownButton<BluetoothDevice>(
+                          isExpanded: true,
+                          value: dispositivoSelecionado ?? dispositivosPareados.first,
+                          dropdownColor: const Color(0xFF1E1E1E),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          items: dispositivosPareados.map((BluetoothDevice value) {
+                            return DropdownMenuItem<BluetoothDevice>(
+                              value: value,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.bluetooth, color: Colors.amber, size: 18),
+                                  const SizedBox(width: 10),
+                                  Text(value.name ?? "Sem nome"),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (novoDispositivo) {
+                            setState(() {
+                              dispositivoSelecionado = novoDispositivo;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                icon: const Icon(Icons.bluetooth),
-                label: const Text("CONECTAR MANUALMENTE", style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: _inicializarEConectarBluetooth,
-              ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.bluetooth_connected),
+                  label: const Text("CONECTAR AO SELECIONADO", style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    if (dispositivoSelecionado != null) {
+                      _conectarAoDispositivo(dispositivoSelecionado!);
+                    } else if (dispositivosPareados.isNotEmpty) {
+                      _conectarAoDispositivo(dispositivosPareados.first);
+                    }
+                  },
+                ),
+              ],
             ] else ...[
+              // --- SEÇÃO RDM ENCONTRADOS (APENAS FÍSICOS, NADA SIMULADO!) ---
               if (aparelhosRDMDescobertos.isEmpty) ...[
                 const SizedBox(height: 80),
                 const Center(
@@ -306,7 +383,7 @@ class _ConectaPageState extends State<ConectaPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        "Buscando equipamentos compatíveis com RDM",
+                        "Nenhum aparelho encontrado ainda.",
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                     ],
