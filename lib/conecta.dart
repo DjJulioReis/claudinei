@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bluetooth_serial_ble/flutter_bluetooth_serial_ble.dart';
 import 'main.dart';
 
 class ConectaPage extends StatefulWidget {
@@ -11,8 +12,8 @@ class ConectaPage extends StatefulWidget {
 class _ConectaPageState extends State<ConectaPage> {
   String? perfilSelecionado = "Pista Geral (Padrão)";
   bool buscandoDispositivos = false;
-  List<String> dispositivosEncontrados = ["MILETO_C3", "MILETO_DMX_PRO", "MILETO_TESTE"];
-  String? dispositivoSelecionado = "MILETO_C3";
+  List<BluetoothDevice> dispositivosEncontrados = [];
+  BluetoothDevice? dispositivoSelecionado;
 
   final List<Map<String, dynamic>> perfisDisponiveis = [
     {
@@ -37,20 +38,38 @@ class _ConectaPageState extends State<ConectaPage> {
     }
   ];
 
-  void _iniciarBusca() {
+  @override
+  void initState() {
+    super.initState();
+    _carregarDispositivosPareados();
+  }
+
+  Future<void> _carregarDispositivosPareados() async {
     setState(() {
       buscandoDispositivos = true;
     });
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          buscandoDispositivos = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Busca de consoles MILETO concluída!")),
-        );
-      }
-    });
+
+    try {
+      List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
+      setState(() {
+        dispositivosEncontrados = bonded;
+        if (bonded.isNotEmpty) {
+          // Tenta pré-selecionar o primeiro dispositivo ou um que chame MILETO
+          dispositivoSelecionado = bonded.firstWhere(
+            (dev) => dev.name != null && dev.name!.contains("MILETO"),
+            orElse: () => bonded.first,
+          );
+        }
+        buscandoDispositivos = false;
+      });
+    } catch (e) {
+      setState(() {
+        buscandoDispositivos = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erro ao carregar dispositivos pareados.")),
+      );
+    }
   }
 
   @override
@@ -97,43 +116,51 @@ class _ConectaPageState extends State<ConectaPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        "DISPOSITIVO ALVO",
+                        "DISPOSITIVO ALVO (PAREADOS)",
                         style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11),
                       ),
                       buscandoDispositivos
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
                           : IconButton(
                               icon: const Icon(Icons.refresh, color: Colors.amber, size: 18),
-                              onPressed: _iniciarBusca,
+                              onPressed: _carregarDispositivosPareados,
                             ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: dispositivoSelecionado,
-                      dropdownColor: const Color(0xFF1E1E1E),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      items: dispositivosEncontrados.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.bluetooth, color: Colors.greenAccent, size: 18),
-                              const SizedBox(width: 10),
-                              Text(value),
-                            ],
+                  dispositivosEncontrados.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            "Nenhum console pareado no sistema! Por favor, pareie o dispositivo 'MILETO' nas configurações de Bluetooth do seu celular.",
+                            style: TextStyle(color: Colors.redAccent, fontSize: 12),
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (novoDispositivo) {
-                        setState(() {
-                          dispositivoSelecionado = novoDispositivo;
-                        });
-                      },
-                    ),
-                  ),
+                        )
+                      : DropdownButtonHideUnderline(
+                          child: DropdownButton<BluetoothDevice>(
+                            isExpanded: true,
+                            value: dispositivoSelecionado,
+                            dropdownColor: const Color(0xFF1E1E1E),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            items: dispositivosEncontrados.map((BluetoothDevice value) {
+                              return DropdownMenuItem<BluetoothDevice>(
+                                value: value,
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.bluetooth, color: Colors.greenAccent, size: 18),
+                                    const SizedBox(width: 10),
+                                    Text(value.name ?? "Dispositivo sem nome"),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (novoDispositivo) {
+                              setState(() {
+                                dispositivoSelecionado = novoDispositivo;
+                              });
+                            },
+                          ),
+                        ),
                 ],
               ),
             ),

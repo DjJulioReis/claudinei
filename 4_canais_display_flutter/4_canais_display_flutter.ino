@@ -337,6 +337,8 @@ void processarBluetooth() {
     if (iv == (desafioHandshake * 2) + 7) {
       autenticado = true;
       pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n"); pTxCharacteristic->notify();
+      delay(200);
+      executarVarreduraRDM(); // Executa e envia a lista automaticamente após o handshake ser validado!
     } else {
       autenticado = false;
       pTxCharacteristic->setValue("MILETO_AUTH:INVALID\n"); pTxCharacteristic->notify();
