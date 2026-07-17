@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         else if (linhaComando.contains("CONNECTED_OK")) {
           setState(() => _isConectado = true);
-          _mostrarFeedback("MILETO Conectada! Insira a senha de acesso.");
+          _mostrarFeedback("MILETO Conectada!");
           enviarComando("GET_CAPABILITIES", "1");
         }
         else if (linhaComando.startsWith("CAPS:")) {
@@ -263,7 +263,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
             else if (linhaComando.contains("CONNECTED_OK")) {
               setState(() => _isConectado = true);
-              _mostrarFeedback("MILETO Conectada! Insira a senha de acesso.");
+              _mostrarFeedback("MILETO Conectada!");
               enviarComando("GET_CAPABILITIES", "1");
             }
             else if (linhaComando.startsWith("CAPS:")) {

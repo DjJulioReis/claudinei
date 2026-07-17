@@ -32,7 +32,7 @@ Adafruit_SSD1306 display(LARGURA_TELA, ALTURA_TELA, &Wire, OLED_RESET);
 #define DMX_UART_NUM UART_NUM_1
 #define DMX_RX_PIN 20
 #define DMX_TX_PIN 21
-#define RS485_DIR_PIN 3  // Controle de direção física para DE/RE RDM
+#define RS485_DIR_PIN 3  // Direção do fluxo RS-485 para RDM
 
 static QueueHandle_t dmx_queue;
 uint8_t raw_dmx_buf[520];
@@ -293,6 +293,7 @@ void lidarComEncoder() {
 }
 
 void setRS485Direction(bool transmitir) {
+  pinMode(RS485_DIR_PIN, OUTPUT);
   if (transmitir) {
     digitalWrite(RS485_DIR_PIN, HIGH);
     delayMicroseconds(5);
