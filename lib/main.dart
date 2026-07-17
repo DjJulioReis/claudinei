@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter_bluetooth_serial_ble/flutter_bluetooth_serial_ble.dart';
+import 'package:universal_ble/universal_ble.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -9,7 +12,6 @@ void main() {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -18,10 +20,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData.dark().copyWith(
         primaryColor: Colors.amber,
         scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: const ColorScheme.dark(
-          primary: Colors.amber,
-          secondary: Colors.amberAccent,
-        ),
+        colorScheme: const ColorScheme.dark(primary: Colors.amber, secondary: Colors.amberAccent),
         useMaterial3: true,
       ),
       home: const SplashScreen(),
@@ -29,10 +28,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// --- TELA DE ABERTURA (SPLASH SCREEN COM LOGO) ---
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
-
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
@@ -41,13 +38,8 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(seconds: 3), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    });
+    Timer(const Duration(seconds: 3), () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen())));
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -56,30 +48,9 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-              'assets/mileto_logo.png',
-              width: 180,
-              height: 180,
-              errorBuilder: (context, error, stackTrace) {
-                return const Text(
-                  "MILETO",
-                  style: TextStyle(
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber,
-                    letterSpacing: 4.0,
-                  ),
-                );
-              },
-            ),
+            Image.asset('assets/mileto_logo.png', width: 180, height: 180, errorBuilder: (c, e, s) => const Text("MILETO", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.amber, letterSpacing: 4.0))),
             const SizedBox(height: 24),
-            const SizedBox(
-              width: 120,
-              child: LinearProgressIndicator(
-                color: Colors.amber,
-                backgroundColor: Colors.white10,
-              ),
-            ),
+            const SizedBox(width: 120, child: LinearProgressIndicator(color: Colors.amber, backgroundColor: Colors.white10)),
           ],
         ),
       ),
@@ -89,7 +60,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -100,164 +70,176 @@ class _HomeScreenState extends State<HomeScreen> {
   double brilhoGeral = 100;
   int enderecoDMX = 1;
   bool modoDMX = false;
+  int tamanhoGrade = 4;
 
-  BluetoothConnection? _connection;
+  BleDevice? _deviceAlvo;
   bool _isConectado = false;
   bool _isCarregando = false;
-  final String _nomeDispositivoAlvo = "MILETO";
+  bool _isProdutoMileto = false;
 
-  // --- SISTEMA DE SENHA ---
-  bool _painelLiberado = false;
-  final String _senhaCorreta = "1234";
-  final TextEditingController _senhaController = TextEditingController();
+  final String _serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  final String _txUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+  final String _rxUuid = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
-  List<String> modosLista = [];
-  String _bufferDadosIncompletos = "";
-
-  // --- CONTROLE TELEMÉTRICO DA PISTA (DIRETO DO ESP32) ---
-  int tamanhoGrade = 4;
-  bool executandoEfeito = false;
+  List<String> modosLista = ["DMX", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO"];
+  String _buffer = "";
   List<double> niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
-
-  // --- VALORES DOS CANAIS MANUAIS ---
+  int canalManualSelecionado = 1;
   List<double> brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
+  List<double> velocidadesCanaisManuais = [100.0, 100.0, 100.0, 100.0];
 
-  int get totalPlacas => tamanhoGrade * tamanhoGrade;
-  int get totalCanais => 4;
+  final Set<String> _macsVistos = {};
 
   @override
   void initState() {
     super.initState();
-    _inicializarEConectarBluetooth();
-  }
-
-  void _inicializarPistaLeds() {
-    setState(() {
-      executandoEfeito = false;
-      niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
-      brilhoCanaisManuais = [100.0, 100.0, 100.0, 100.0];
+    _configurarEscutaDeDadosBLE();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _inicializarEConectarBluetooth();
     });
   }
 
-  @override
-  void dispose() {
-    _connection?.dispose();
-    _senhaController.dispose();
-    super.dispose();
+  void _configurarEscutaDeDadosBLE() {
+    UniversalBle.onValueChange = (String dId, String cId, Uint8List val, int? timestamp) {
+      if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
+        _buffer += utf8.decode(val);
+        while (_buffer.contains('\n')) {
+          int pos = _buffer.indexOf('\n');
+          String linha = _buffer.substring(0, pos).trim();
+          _buffer = _buffer.substring(pos + 1);
+          if (linha.isEmpty) continue;
+
+          print("📝 Linha recebida: $linha");
+
+          if (linha.startsWith("AUTH_CHALLENGE:")) {
+            int challenge = int.tryParse(linha.split(":")[1]) ?? 0;
+            int response = (challenge * 2) + 7;
+            enviarComando("AUTH_RESPONSE", "$response");
+          } else if (linha.contains("MILETO_AUTH:VALID")) {
+            setState(() => _isProdutoMileto = true);
+            enviarComando("GET_CAPABILITIES", "1");
+          } else if (linha.startsWith("CH_LEVELS:")) {
+            List<String> n = linha.replaceAll("CH_LEVELS:", "").split(",");
+            if (n.length >= 4) {
+              setState(() => niveisReaisCanais = List.generate(4, (i) => double.tryParse(n[i]) ?? 0.0));
+            }
+          } else if (linha.startsWith("CAPS:")) {
+            setState(() => modosLista = linha.replaceAll("CAPS:", "").split(","));
+          } else if (linha.startsWith("DMX:")) {
+            int? d = int.tryParse(linha.replaceAll("DMX:", ""));
+            if (d != null) setState(() => enderecoDMX = d);
+          } else if (linha.startsWith("MODO:")) {
+            // Sincroniza hardware -> app: "MODO:x|DMX:y"
+            List<String> partes = linha.split("|");
+            int? m = int.tryParse(partes[0].replaceAll("MODO:", ""));
+            if (m != null) setState(() { modoAtual = m; modoDMX = (m == 0); });
+            if (partes.length > 1) {
+              int? d = int.tryParse(partes[1].replaceAll("DMX:", ""));
+              if (d != null) setState(() => enderecoDMX = d);
+            }
+          } else if (linha.startsWith("CHAVE_MODO:")) {
+            setState(() { modoDMX = (linha.replaceAll("CHAVE_MODO:", "") == "DMX"); modoAtual = modoDMX ? 0 : 1; });
+          } else if (linha.contains("GRAVAR:OK")) {
+            _mostrarFeedback("💾 Configurações salvas!");
+          }
+        }
+      }
+    };
+
+    UniversalBle.onConnectionChange = (String dId, bool isConnected, String? error) {
+      print("🔌 Conexão $dId: $isConnected. Erro=$error");
+      if (_deviceAlvo != null && dId == _deviceAlvo!.deviceId) {
+        setState(() {
+          _isConectado = isConnected;
+          if (!isConnected) {
+            _deviceAlvo = null;
+            _isProdutoMileto = false;
+          }
+        });
+      }
+    };
   }
 
   Future<void> _inicializarEConectarBluetooth() async {
-    setState(() {
-      _isCarregando = true;
-      modosLista.clear();
-      _painelLiberado = false;
-    });
+    if (_isConectado && _deviceAlvo != null) {
+      try { await UniversalBle.disconnect(_deviceAlvo!.deviceId); } catch (e) {}
+      setState(() { _isConectado = false; _isProdutoMileto = false; _isCarregando = false; });
+      return;
+    }
+
+    setState(() { _isCarregando = true; _isProdutoMileto = false; _isConectado = false; });
+    _macsVistos.clear();
+
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan, Permission.bluetoothConnect, Permission.location,
+    ].request();
+
+    if (statuses[Permission.bluetoothScan]?.isGranted != true || statuses[Permission.bluetoothConnect]?.isGranted != true) {
+      setState(() { _isCarregando = false; });
+      _mostrarFeedback("⚠️ Permissões negadas.");
+      return;
+    }
 
     try {
-      List<BluetoothDevice> bondedDevices = await FlutterBluetoothSerial.instance.getBondedDevices();
-      BluetoothDevice? dispositivoMileto;
+      print("Iniciando escaneamento...");
+      await UniversalBle.startScan();
 
-      for (var device in bondedDevices) {
-        if (device.name == _nomeDispositivoAlvo) {
-          dispositivoMileto = device;
-          break;
+      Completer<BleDevice> c = Completer();
+      UniversalBle.onScanResult = (device) {
+        String name = device.name ?? 'Sem Nome';
+        String id = device.deviceId.toUpperCase();
+        if (!_macsVistos.contains(id)) { _macsVistos.add(id); print("Detectado: $name | $id"); }
+        if (name.toUpperCase().contains("MILETO")) {
+          print("🎯 MILETO ENCONTRADO!");
+          _deviceAlvo = device;
+          if (!c.isCompleted) c.complete(device);
         }
-      }
+      };
 
-      if (dispositivoMileto != null) {
-        BluetoothConnection connection = await BluetoothConnection.toAddress(dispositivoMileto.address);
+      _deviceAlvo = await c.future.timeout(const Duration(seconds: 15));
+      await UniversalBle.stopScan();
 
-        setState(() {
-          _connection = connection;
-          _isCarregando = false;
-        });
+      await Future.delayed(const Duration(milliseconds: 800));
 
-        _connection!.input?.listen((data) {
-          _bufferDadosIncompletos += utf8.decode(data);
-
-          while (_bufferDadosIncompletos.contains('\n')) {
-            int posicaoQuebra = _bufferDadosIncompletos.indexOf('\n');
-            String linhaComando = _bufferDadosIncompletos.substring(0, posicaoQuebra).trim();
-            _bufferDadosIncompletos = _bufferDadosIncompletos.substring(posicaoQuebra + 1);
-
-            if (linhaComando.isEmpty) continue;
-
-            if (linhaComando.startsWith("CH_LEVELS:")) {
-              String dados = linhaComando.replaceAll("CH_LEVELS:", "");
-              List<String> niveis = dados.split(",");
-              if (niveis.length >= 4) {
-                setState(() {
-                  niveisReaisCanais = List.generate(4, (i) => double.tryParse(niveis[i]) ?? 0.0);
-                  executandoEfeito = niveisReaisCanais.any((v) => v > 0);
-                });
-              }
-            }
-            else if (linhaComando.contains("CONNECTED_OK")) {
-              setState(() => _isConectado = true);
-              _mostrarFeedback("MILETO Conectada! Insira a senha de acesso.");
-              enviarComando("GET_CAPABILITIES", "1");
-            }
-            else if (linhaComando.startsWith("CAPS:")) {
-              String listaEfeitos = linhaComando.replaceAll("CAPS:", "");
-              setState(() {
-                modosLista = listaEfeitos.split(",");
-              });
-            }
-            else if (linhaComando.startsWith("CHAVE_MODO:")) {
-              String modoVindoDaPlaca = linhaComando.replaceAll("CHAVE_MODO:", "");
-              setState(() {
-                modoDMX = (modoVindoDaPlaca == "DMX");
-              });
-              _mostrarFeedback(modoDMX ? "Modo Alterado: Mesa DMX" : "Modo Alterado: Controle Bluetooth");
-            }
-            else if (linhaComando.contains("[MEMORIA]") || linhaComando.contains("GRAVAR:OK")) {
-              _mostrarFeedback("💾 Configurações gravadas com sucesso!");
-            }
+      if (_deviceAlvo != null) {
+        int tent = 0;
+        bool ok = false;
+        while (tent < 3 && !ok) {
+          tent++;
+          try {
+            print("⚡ Tentativa $tent/3 conectando...");
+            await UniversalBle.connect(_deviceAlvo!.deviceId);
+            ok = true;
+          } catch (e) {
+            if (tent >= 3) rethrow;
+            await Future.delayed(const Duration(milliseconds: 1500));
           }
-        }).onDone(() {
-          setState(() {
-            _isConectado = false;
-            _connection = null;
-            modosLista.clear();
-            _bufferDadosIncompletos = "";
-            _painelLiberado = false;
-            _inicializarPistaLeds();
-          });
-          _mostrarFeedback("A placa foi desconectada.");
-        });
+        }
 
-        enviarComando("PING", "1");
+        await Future.delayed(const Duration(milliseconds: 800));
+        await UniversalBle.discoverServices(_deviceAlvo!.deviceId);
+        await UniversalBle.setNotifiable(_deviceAlvo!.deviceId, _serviceUuid, _txUuid, BleInputProperty.notification);
 
-      } else {
-        _mostrarFeedback("Dispositivo 'MILETO' não pareado!");
-        setState(() => _isCarregando = false);
+        setState(() { _isConectado = true; _isCarregando = false; });
+        print("🚀 Conectado!");
       }
     } catch (e) {
-      _mostrarFeedback("Falha na conexão física do rádio.");
-      setState(() {
-        _isConectado = false;
-        _isCarregando = false;
-        modosLista.clear();
-        _bufferDadosIncompletos = "";
-        _painelLiberado = false;
-      });
+      try { await UniversalBle.stopScan(); } catch (_) {}
+      setState(() { _isConectado = false; _isCarregando = false; _isProdutoMileto = false; _deviceAlvo = null; });
+      _mostrarFeedback("Falha na conexão.");
     }
   }
 
-  void enviarComando(String comando, String valor) async {
-    String bufferCompleto = "$comando:$valor\n";
-    if (_connection != null && _connection!.isConnected) {
-      _connection!.output.add(utf8.encode(bufferCompleto));
-      await _connection!.output.allSent;
+  void enviarComando(String cmd, String val) async {
+    if (_isConectado && _deviceAlvo != null) {
+      String data = "$cmd:$val\n";
+      Uint8List bytes = Uint8List.fromList(utf8.encode(data));
+      try {
+        await UniversalBle.writeValue(_deviceAlvo!.deviceId, _serviceUuid, _rxUuid, bytes, BleOutputProperty.withResponse);
+      } catch (_) {
+        await UniversalBle.writeValue(_deviceAlvo!.deviceId, _serviceUuid, _rxUuid, bytes, BleOutputProperty.withoutResponse);
+      }
     }
-  }
-
-  void _solicitarTesteDisparo() {
-    enviarComando("EFEITO_PISTA", "START");
-  }
-
-  void _solicitarApagarPista() {
-    enviarComando("EFEITO_PISTA", "CLEAR");
   }
 
   void _mostrarFeedback(String msg) {
@@ -265,120 +247,44 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
-  void _verificarSenha() {
-    if (_senhaController.text == _senhaCorreta) {
-      setState(() {
-        _painelLiberado = true;
-      });
-      _senhaController.clear();
-      _mostrarFeedback("🔓 Acesso liberado com sucesso!");
-    } else {
-      _senhaController.clear();
-      _mostrarFeedback("❌ Senha incorreta! Tente novamente.");
-    }
+  Future<void> _abrirSiteMileto() async {
+    final Uri url = Uri.parse('https://mileto.ind.br/');
+    if (!await launchUrl(url)) _mostrarFeedback("Não foi possível abrir o site.");
   }
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset(
-          'assets/mileto_logo.png',
-          height: 35,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return const Text(
-                "MILETO",
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 18, letterSpacing: 1.5)
-            );
-          },
-        ),
+        title: const Text("MILETO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
         actions: [
-          _isCarregando
-              ? const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-          )
-              : IconButton(
-            icon: Icon(
-              _isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-              color: _isConectado ? Colors.greenAccent : Colors.redAccent,
-            ),
-            onPressed: _inicializarEConectarBluetooth,
-          )
+          if (_isCarregando) const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+          else IconButton(icon: Icon(_isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled, color: _isConectado ? Colors.greenAccent : Colors.redAccent), onPressed: _inicializarEConectarBluetooth)
         ],
         centerTitle: true,
         backgroundColor: const Color(0xFF1E1E1E),
-        elevation: 0,
       ),
       body: SafeArea(
-        child: !_isConectado
-            ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE SUPERIOR PARA CONECTAR)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
-            : !_painelLiberado
-            ? _buildTelaDeSenha()
+        child: _isCarregando ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(color: Colors.amber), SizedBox(height: 16), Text("Conectando...", style: TextStyle(color: Colors.grey))]))
+            : (_isConectado == false) ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE ACIMA)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+            : !_isProdutoMileto ? _buildTelaProdutoNaoEncontrado()
             : SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: mediaQuery.padding.bottom + 32.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Text(
-                    "⚡ LINK ATIVO - RESPONDENDO ⚡",
-                    style: const TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
               Card(
                 color: const Color(0xFF1E1E1E),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          modoDMX ? "MODO DMX ATIVO" : "MODO MANUAL / RF",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: modoDMX ? Colors.cyan : Colors.amber),
-                        ),
-                      ),
-                      Switch(
-                        value: modoDMX,
-                        activeColor: Colors.cyan,
-                        inactiveThumbColor: Colors.amber,
-                        onChanged: (value) {
-                          setState(() {
-                            modoDMX = value;
-                            enviarComando("CHAVE_MODO", modoDMX ? "DMX" : "RF");
-                          });
-                        },
-                      ),
-                    ],
-                  ),
+                child: ListTile(
+                  title: Text(modoDMX ? "MODO DMX ATIVO" : "MODO MANUAL / DMX", style: TextStyle(fontWeight: FontWeight.bold, color: modoDMX ? Colors.cyan : Colors.amber)),
+                  trailing: Switch(value: modoDMX, activeColor: Colors.cyan, onChanged: (v) { setState(() { modoDMX = v; modoAtual = v ? 0 : 1; }); enviarComando("CHAVE_MODO", modoDMX ? "DMX" : "RF"); }),
                 ),
               ),
               const SizedBox(height: 12),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: modoDMX ? _buildPainelDMX() : _buildPainelManuais(),
-              ),
+              AnimatedSwitcher(duration: const Duration(milliseconds: 300), child: modoDMX ? _buildPainelDMX() : _buildPainelManuais()),
               const SizedBox(height: 16),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.save),
-                label: const Text("GRAVAR NA MEMÓRIA", style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: () {
-                  enviarComando("GRAVAR", "EEPROM");
-                },
-              ),
+              ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), icon: const Icon(Icons.save), label: const Text("GRAVAR NA MEMÓRIA"), onPressed: () => enviarComando("GRAVAR", "1")),
               const SizedBox(height: 24),
-              const Center(child: Text("SIMULADOR DE MÓDULOS REAIS", style: TextStyle(color: Colors.grey, fontSize: 11, letterSpacing: 2))),
-              const SizedBox(height: 10),
               _buildSimuladorPistaLed(),
             ],
           ),
@@ -387,406 +293,146 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTelaDeSenha() {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 300),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.lock_outline, size: 64, color: Colors.amber),
-            const SizedBox(height: 16),
-            const Text(
-              "SISTEMA RESTRITO",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              "Digite o PIN de segurança para liberar o console.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _senhaController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              maxLength: 4,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
-              decoration: InputDecoration(
-                counterText: "",
-                filled: true,
-                fillColor: const Color(0xFF1E1E1E),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                hintText: "••••",
-                hintStyle: const TextStyle(color: Colors.white24),
-              ),
-              onSubmitted: (_) => _verificarSenha(),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _verificarSenha,
-                child: const Text("ENTRAR", style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Widget _buildTelaProdutoNaoEncontrado() {
+    return Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.security, size: 80, color: Colors.orangeAccent), const SizedBox(height: 24), const Text("Aguardando validação...", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: const Size(double.infinity, 50)), onPressed: _abrirSiteMileto, child: const Text("SITE MILETO"))])));
   }
 
   Widget _buildPainelDMX() {
-    return Card(
-      key: const ValueKey(1),
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            const Text("CANAL DMX", style: TextStyle(color: Colors.grey)),
-            Text("$enderecoDMX", style: const TextStyle(fontSize: 50, fontWeight: FontWeight.bold, color: Colors.cyan)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly, // <- Corrigido aqui!
+    return Column(
+      children: [
+        Card(
+          color: const Color(0xFF1E1E1E),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
               children: [
-                IconButton.filled(
-                  style: IconButton.styleFrom(backgroundColor: Colors.cyan.withOpacity(0.1)),
-                  icon: const Icon(Icons.remove, color: Colors.cyan),
-                  onPressed: () {
-                    setState(() { if (enderecoDMX > 1) enderecoDMX--; });
-                    enviarComando("SET_DMX", "$enderecoDMX");
-                  },
+                const Text("ENDEREÇO DMX ATUAL", style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildDmxControlBtn(Icons.remove, () {
+                      if (enderecoDMX > 1) {
+                        setState(() => enderecoDMX--);
+                        enviarComando("SET_DMX", "$enderecoDMX");
+                      }
+                    }),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text("$enderecoDMX", style: const TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.cyan)),
+                    ),
+                    _buildDmxControlBtn(Icons.add, () {
+                      if (enderecoDMX < 512) {
+                        setState(() => enderecoDMX++);
+                        enviarComando("SET_DMX", "$enderecoDMX");
+                      }
+                    }),
+                  ],
                 ),
-                IconButton.filled(
-                  style: IconButton.styleFrom(backgroundColor: Colors.cyan.withOpacity(0.1)),
-                  icon: const Icon(Icons.add, color: Colors.cyan),
-                  onPressed: () {
-                    setState(() { if (enderecoDMX < 512) enderecoDMX++; });
-                    enviarComando("SET_DMX", "$enderecoDMX");
-                  },
-                ),
+                const SizedBox(height: 12),
+                const Text("(Ajuste via Encoder ou Botões)", style: TextStyle(color: Colors.white24, fontSize: 11)),
               ],
-            )
-          ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildAnaliseGeral() {
-    return Card(
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.analytics_outlined, size: 18, color: Colors.amber),
-                SizedBox(width: 8),
-                Text("ANÁLISE GERAL EM TEMPO REAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(4, (index) {
-                return Column(
-                  children: [
-                    Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        Container(
-                          width: 25,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 100),
-                          width: 25,
-                          height: (niveisReaisCanais[index] / 100.0) * 80,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                Colors.amber.shade900,
-                                Colors.amber,
-                                Colors.amberAccent,
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                            boxShadow: [
-                              BoxShadow(color: Colors.amber.withOpacity(0.3), blurRadius: 8, spreadRadius: 1),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text("CH${index + 1}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                    Text("${niveisReaisCanais[index].toInt()}%", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber)),
-                  ],
-                );
-              }),
-            ),
-          ],
+  Widget _buildDmxControlBtn(IconData icon, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.cyan.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.cyan.withOpacity(0.3), width: 2),
         ),
+        child: Icon(icon, color: Colors.cyan, size: 30),
       ),
     );
   }
 
   Widget _buildPainelManuais() {
-    bool isEfeitoManualAtivo = modosLista.isNotEmpty &&
-        modoAtual < modosLista.length &&
-        modosLista[modoAtual].trim().toUpperCase() == "MANUAL";
-
+    bool isManual = modoAtual == 1;
     return Column(
-      key: const ValueKey(2),
       children: [
-        _buildAnaliseGeral(),
-        const SizedBox(height: 8),
         Card(
           color: const Color(0xFF1E1E1E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("EFEITOS MILETO", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-
-                modosLista.isEmpty
-                    ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20.0),
-                    child: Text("Aguardando mapa de efeitos da placa...", style: TextStyle(color: Colors.white38, fontSize: 13)),
-                  ),
-                )
-                    : GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: modosLista.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 2.2),
-                  itemBuilder: (context, index) {
-                    final bool sel = modoAtual == index;
-                    return ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E),
-                        foregroundColor: sel ? Colors.black : Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () {
-                        setState(() => modoAtual = index);
-                        enviarComando("SET_MODO", "$modoAtual");
-                      },
-                      child: Text(modosLista[index], style: const TextStyle(fontSize: 11), textAlign: TextAlign.center),
-                    );
-                  },
-                ),
-              ],
+            padding: const EdgeInsets.all(12.0),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: modosLista.length - 1,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 2.2),
+              itemBuilder: (context, index) {
+                final int idxModo = index + 1;
+                final bool sel = modoAtual == idxModo;
+                return ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white, padding: EdgeInsets.zero), onPressed: () { setState(() => modoAtual = idxModo); enviarComando("SET_MODO", "$modoAtual"); }, child: Text(modosLista[idxModo], style: const TextStyle(fontSize: 10)));
+              },
             ),
           ),
         ),
-        if (isEfeitoManualAtivo) ...[
+        if (isManual) ...[
           const SizedBox(height: 8),
           Card(
             color: const Color(0xFF1E1E1E),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(12.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("CONTROLE MANUAL INDEPENDENTE", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 16),
-                  ...List.generate(4, (index) {
-                    return _buildSliderRow("CANAL ${index + 1}", brilhoCanaisManuais[index], (val) {
-                      setState(() => brilhoCanaisManuais[index] = val);
-                    }, "SET_CH${index + 1}");
-                  }),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: List.generate(4, (index) {
+                    final int canal = index + 1;
+                    final bool sel = canalManualSelecionado == canal;
+                    return Expanded(child: Padding(padding: EdgeInsets.only(right: index < 3 ? 8 : 0), child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white70, padding: EdgeInsets.zero), onPressed: () => setState(() => canalManualSelecionado = canal), child: Text("CH$canal"))));
+                  })),
+                  const Divider(height: 32, color: Colors.white10),
+                  _buildSliderRow("BRILHO CH$canalManualSelecionado", brilhoCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val), "SET_CH$canalManualSelecionado"),
+                  const SizedBox(height: 12),
+                  _buildSliderRow("VELOCIDADE CH$canalManualSelecionado", velocidadesCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val), "SET_VCH$canalManualSelecionado"),
                 ],
               ),
             ),
           ),
         ],
-        const SizedBox(height: 8),
-        if (!isEfeitoManualAtivo) ...[
-          _buildSliderCard("VELOCIDADE (STROBO / EFEITOS)", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
+        if (!isManual) ...[
+          const SizedBox(height: 8),
+          _buildSliderCard("VELOCIDADE EFEITO", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
           const SizedBox(height: 8),
           _buildSliderCard("BRILHO GERAL", brilhoGeral, (val) => setState(() => brilhoGeral = val), "SET_DIM"),
-        ] else ...[
-          _buildSliderCard("VELOCIDADE DA OSCILAÇÃO", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
         ],
       ],
     );
   }
 
-  Widget _buildSliderRow(String label, double valor, Function(double) onCh, String cmd) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-              Text("${valor.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
-            ],
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-            ),
-            child: Slider(
-              value: valor,
-              min: 0,
-              max: 100,
-              divisions: 100,
-              activeColor: Colors.amber,
-              inactiveColor: Colors.white10,
-              onChanged: onCh,
-              onChangeEnd: (v) => enviarComando(cmd, "${v.toInt()}"),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildSliderRow(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
+    return Column(
+      children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
+        Slider(value: val, min: min, max: max, divisions: (max - min).toInt(), activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")),
+      ],
     );
   }
 
-  Widget _buildSliderCard(String label, double valor, Function(double) onCh, String cmd) {
-    return Card(
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                Text("${valor.toInt()}%", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            Slider(
-              value: valor,
-              min: 0,
-              max: 100,
-              divisions: 100,
-              onChanged: onCh,
-              onChangeEnd: (v) => enviarComando(cmd, "${v.toInt()}"),
-            ),
-          ],
-        ),
-      ),
-    );
+  Widget _buildSliderCard(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
+    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(12), child: _buildSliderRow(label, val, onCh, cmd, min: min, max: max)));
   }
 
   Widget _buildSimuladorPistaLed() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("QUANTIDADE DE PLACAS:", style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
-              DropdownButton<int>(
-                value: tamanhoGrade,
-                dropdownColor: const Color(0xFF1E1E1E),
-                style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-                underline: Container(height: 2, color: Colors.amber),
-                items: [3, 4, 5, 6].map((int value) {
-                  return DropdownMenuItem<int>(
-                    value: value,
-                    child: Text(" Placas (${value}x$value)"),
-                  );
-                }).toList(),
-                onChanged: (novoTamanho) {
-                  if (novoTamanho != null) {
-                    setState(() {
-                      tamanhoGrade = novoTamanho;
-                      _solicitarApagarPista();
-                    });
-                    enviarComando("SET_GRID", "${novoTamanho}x$novoTamanho");
-                  }
-                },
-              ),
-            ],
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("ANÁLISE GERAL (PISO)", style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)), DropdownButton<int>(value: tamanhoGrade, dropdownColor: const Color(0xFF1E1E1E), items: [3, 4, 5, 6].map((int i) => DropdownMenuItem(value: i, child: Text("${i}x$i  "))).toList(), onChanged: (v) => setState(() => tamanhoGrade = v!))]),
           const SizedBox(height: 12),
-          Container(
-            width: 200,
-            height: 200,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A0A0A),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: LedGridPainter(
-                gridSize: tamanhoGrade,
-                niveisCanais: niveisReaisCanais,
-              ),
-            ),
-          ),
+          Container(width: 200, height: 200, decoration: BoxDecoration(color: const Color(0xFF0A0A0A), borderRadius: BorderRadius.circular(8)), child: CustomPaint(painter: LedGridPainter(gridSize: tamanhoGrade, niveisCanais: niveisReaisCanais))),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.withOpacity(0.15),
-                    foregroundColor: Colors.amber,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  icon: const Icon(Icons.flash_on, size: 18),
-                  label: const Text("TESTAR DISPARO", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  onPressed: _solicitarTesteDisparo,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withOpacity(0.15),
-                    foregroundColor: Colors.redAccent,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  icon: const Icon(Icons.power_settings_new, size: 18),
-                  label: const Text("APAGAR PISTA", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  onPressed: _solicitarApagarPista,
-                ),
-              ),
-            ],
-          )
+          Row(children: [Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "START"), child: const Text("TESTAR PISTA"))), const SizedBox(width: 8), Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "CLEAR"), child: const Text("APAGAR")))]),
         ],
       ),
     );
@@ -796,59 +442,23 @@ class _HomeScreenState extends State<HomeScreen> {
 class LedGridPainter extends CustomPainter {
   final int gridSize;
   final List<double> niveisCanais;
-
-  LedGridPainter({
-    required this.gridSize,
-    required this.niveisCanais,
-  });
-
+  LedGridPainter({required this.gridSize, required this.niveisCanais});
   @override
   void paint(Canvas canvas, Size size) {
-    final int totalPlacas = gridSize * gridSize;
-    final double spacing = 6.0;
-
-    final double cellWidth = (size.width - (spacing * (gridSize - 1))) / gridSize;
-    final double cellHeight = (size.height - (spacing * (gridSize - 1))) / gridSize;
-
-    final Color corApagado = Colors.grey.shade900;
-    const Color corBase = Colors.amber;
-
-    for (int i = 0; i < totalPlacas; i++) {
-      int row = i ~/ gridSize;
-      int col = i % gridSize;
-
-      // Mapeia a placa para um dos 4 canais (distribuição em quadrantes ou alternada)
-      // Aqui usamos uma lógica simples: i % 4
-      int canalIdx = i % 4;
-      double nivel = niveisCanais[canalIdx] / 100.0;
-
-      double x = col * (cellWidth + spacing);
-      double y = row * (cellHeight + spacing);
-
-      final Rect rectPlaca = Rect.fromLTWH(x, y, cellWidth, cellHeight);
-
-      Color corDaPlaca = nivel > 0
-          ? corBase.withOpacity(nivel.clamp(0.1, 1.0))
-          : corApagado;
-
-      if (nivel > 0) {
-        final Paint glowPaint = Paint()
-          ..color = corBase.withOpacity(nivel * 0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-        canvas.drawRect(rectPlaca.inflate(2), glowPaint);
+    double sw = size.width / gridSize, sh = size.height / gridSize;
+    for (int i = 0; i < gridSize * gridSize; i++) {
+      int r = i ~/ gridSize, c = i % gridSize;
+      int chF = (r + c) % 2 == 0 ? 0 : 2, chQ = (r + c) % 2 == 0 ? 1 : 3;
+      double nf = niveisCanais[chF] / 100.0, nq = niveisCanais[chQ] / 100.0;
+      final Rect rect = Rect.fromLTWH(c * sw, r * sh, sw - 2, sh - 2);
+      if (nf == 0 && nq == 0) canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
+      else {
+        double t = (nf + nq).clamp(0.001, 2.0);
+        int red = ((224 * nf + 255 * nq) / t).round(), green = ((232 * nf + 227 * nq) / t).round(), blue = ((255 * nf + 163 * nq) / t).round();
+        canvas.drawRect(rect, Paint()..color = Color.fromARGB(255, red, green, blue).withOpacity((t / 1.5).clamp(0.3, 1.0)));
       }
-
-      final Paint ledPaint = Paint()
-        ..color = corDaPlaca
-        ..style = PaintingStyle.fill;
-
-      canvas.drawRRect(RRect.fromRectAndRadius(rectPlaca, const Radius.circular(4)), ledPaint);
     }
   }
-
   @override
-  bool shouldRepaint(covariant LedGridPainter oldDelegate) {
-    return oldDelegate.gridSize != gridSize ||
-        oldDelegate.niveisCanais != niveisCanais;
-  }
+  bool shouldRepaint(covariant LedGridPainter old) => old.niveisCanais != niveisCanais || old.gridSize != gridSize;
 }
