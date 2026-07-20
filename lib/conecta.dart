@@ -271,7 +271,7 @@ class _ConectaPageState extends State<ConectaPage> {
                     setState(() {
                       aparelho['dmx'] = dmxTemp;
                     });
-                    _enviarComando("SET_DMX", "$dmxTemp");
+                    _enviarComando("SET_DMX", "${aparelho['uid']},$dmxTemp");
                     Navigator.pop(context);
                     _mostrarFeedback("Endereço DMX alterado via RDM para Canal $dmxTemp!");
                   },

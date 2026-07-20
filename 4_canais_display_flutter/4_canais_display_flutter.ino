@@ -308,23 +308,24 @@ void executarVarreduraRDM() {
 
   pTxCharacteristic->setValue("RDM_START\n");
   pTxCharacteristic->notify();
-  delay(100);
+  delay(300); // Intervalo de proteção para garantir que os pacotes não colidam no BLE
 
-  // Simulação de resposta RDM
+  // Simulação de resposta RDM completa e limpa
   pTxCharacteristic->setValue("RDM_DEV:4d49,00000101,1,7,SPOT_BEAM_200\n");
   pTxCharacteristic->notify();
-  delay(100);
+  delay(300);
 
   pTxCharacteristic->setValue("RDM_DEV:4d49,00000102,8,4,PAR_LED_SLIM\n");
   pTxCharacteristic->notify();
-  delay(100);
+  delay(300);
 
   pTxCharacteristic->setValue("RDM_DEV:2a2b,00005a90,12,12,STB_RGBW_PRO\n");
   pTxCharacteristic->notify();
-  delay(100);
+  delay(300);
 
   pTxCharacteristic->setValue("RDM_END\n");
   pTxCharacteristic->notify();
+  delay(100);
 }
 
 void processarBluetooth() {
@@ -338,7 +339,7 @@ void processarBluetooth() {
     if (iv == (desafioHandshake * 2) + 7) {
       autenticado = true;
       pTxCharacteristic->setValue("MILETO_AUTH:VALID\nCONNECTED_OK\n"); pTxCharacteristic->notify();
-      delay(200);
+      delay(500); // Maior tempo para garantir que os buffers de conexao BLE separem as mensagens
       executarVarreduraRDM(); // Executa e envia a lista automaticamente após o handshake ser validado!
     } else {
       autenticado = false;
@@ -362,7 +363,17 @@ void processarBluetooth() {
   }
   else if (cmd == "SET_VEL") { velocidad = min(iv, 100); }
   else if (cmd == "SET_DIM") { brilhoGeral = map(iv, 0, 100, 0, 255); }
-  else if (cmd == "SET_DMX") { enderecoDMX = iv; }
+  else if (cmd == "SET_DMX") {
+    int commaIdx = val.indexOf(',');
+    if (commaIdx != -1) {
+      String uid = val.substring(0, commaIdx);
+      int canal = val.substring(commaIdx + 1).toInt();
+      // O ESP32 pode processar remotamente o endereco do refletor na linha fisica RDM
+      Serial.print("RDM SET DMX para UID "); Serial.print(uid); Serial.print(" -> "); Serial.println(canal);
+    } else {
+      enderecoDMX = iv;
+    }
+  }
   else if (cmd == "VARREDURA_RDM") { executarVarreduraRDM(); }
   else if (cmd == "CHAVE_MODO") { sistemaEmModoDMX = (val == "DMX"); if(!sistemaEmModoDMX && modoAtual == 0) modoAtual = 1; }
   else if (cmd == "GRAVAR") { exibirTelaSalvando(); salvarConfiguracao(); pTxCharacteristic->setValue("GRAVAR:OK\n"); pTxCharacteristic->notify(); delay(1000); }
