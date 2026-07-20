@@ -226,6 +226,13 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         await Future.delayed(const Duration(milliseconds: 800));
+        try {
+          await UniversalBle.requestMtu(_deviceAlvo!.deviceId, 251);
+          print("MTU configurado com sucesso para 251 bytes!");
+        } catch (e) {
+          print("Erro ao solicitar MTU: $e");
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
         await UniversalBle.discoverServices(_deviceAlvo!.deviceId);
         await UniversalBle.setNotifiable(_deviceAlvo!.deviceId, _serviceUuid, _txUuid, BleInputProperty.notification);
 
