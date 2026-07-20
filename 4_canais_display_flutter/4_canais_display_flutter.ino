@@ -400,16 +400,10 @@ void executarVarreduraRDM() {
   pTxCharacteristic->notify();
   delay(300); // Intervalo de proteção para garantir que os pacotes não colidam no BLE
 
-  // Simulação de resposta RDM completa e limpa
-  pTxCharacteristic->setValue("RDM_DEV:4d49,00000101,1,7,SPOT_BEAM_200\n");
-  pTxCharacteristic->notify();
-  delay(300);
-
-  pTxCharacteristic->setValue("RDM_DEV:4d49,00000102,8,4,PAR_LED_SLIM\n");
-  pTxCharacteristic->notify();
-  delay(300);
-
-  pTxCharacteristic->setValue("RDM_DEV:2a2b,00005a90,12,12,STB_RGBW_PRO\n");
+  // Como esta placa é a própria controladora da Pista Paris, ela reporta apenas o seu próprio ID RDM único!
+  // Formato: RDM_DEV:<UID_FABRICANTE>,<UID_DISPOSITIVO>,<ENDERECO_DMX>,<QTD_CANAIS>,<NOME_MODELO>
+  String devPayload = "RDM_DEV:4d49,00000101," + String(enderecoDMX) + ",4,PISTA_PARIS_4CH\n";
+  pTxCharacteristic->setValue(devPayload.c_str());
   pTxCharacteristic->notify();
   delay(300);
 
@@ -460,6 +454,17 @@ void processarBluetooth() {
       int canal = val.substring(commaIdx + 1).toInt();
       // Envia o pacote RDM real físico pelo barramento
       enviarRdmSetDmxAddress(uid, canal);
+
+      // Se for o ID da própria controladora Paris, atualiza o endereço localmente e salva na Flash NVS!
+      String testUid = uid;
+      testUid.toUpperCase();
+      testUid.replace(":", "");
+      if (testUid.contains("4D4900000101")) {
+        enderecoDMX = canal;
+        exibirTelaSalvando();
+        salvarConfiguracao();
+        delay(500);
+      }
     } else {
       enderecoDMX = iv;
     }
