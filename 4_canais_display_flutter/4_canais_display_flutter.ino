@@ -303,6 +303,96 @@ void setRS485Direction(bool transmitir) {
   }
 }
 
+// Converte uma string UID formatada "4D49:00000101" em bytes
+void parseUID(String uidStr, uint8_t *man_id, uint8_t *dev_id) {
+  uidStr.replace(":", "");
+  uidStr.trim();
+  if (uidStr.length() < 12) return;
+
+  // Fab (2 bytes)
+  man_id[0] = strtol(uidStr.substring(0, 2).c_str(), NULL, 16);
+  man_id[1] = strtol(uidStr.substring(2, 4).c_str(), NULL, 16);
+
+  // Dev (4 bytes)
+  dev_id[0] = strtol(uidStr.substring(4, 6).c_str(), NULL, 16);
+  dev_id[1] = strtol(uidStr.substring(6, 8).c_str(), NULL, 16);
+  dev_id[2] = strtol(uidStr.substring(8, 10).c_str(), NULL, 16);
+  dev_id[3] = strtol(uidStr.substring(10, 12).c_str(), NULL, 16);
+}
+
+// Constrói e envia um pacote RDM SET_COMMAND (DMX_START_ADDRESS = 0x00F0) na linha física
+void enviarRdmSetDmxAddress(String uidStr, int novoCanal) {
+  uint8_t dest_man[2] = {0, 0};
+  uint8_t dest_dev[4] = {0, 0, 0, 0};
+  parseUID(uidStr, dest_man, dest_dev);
+
+  uint8_t rdm_packet[28];
+  rdm_packet[0] = 0xCC; // Start Code
+  rdm_packet[1] = 0x01; // Sub-Start Code
+  rdm_packet[2] = 26;   // Message Length (Total bytes excluindo checksum: 26)
+
+  // Destination UID (6 bytes)
+  rdm_packet[3] = dest_man[0];
+  rdm_packet[4] = dest_man[1];
+  rdm_packet[5] = dest_dev[0];
+  rdm_packet[6] = dest_dev[1];
+  rdm_packet[7] = dest_dev[2];
+  rdm_packet[8] = dest_dev[3];
+
+  // Source UID (6 bytes - Consola MILETO: 0x4D49:00000001)
+  rdm_packet[9] = 0x4D;
+  rdm_packet[10] = 0x49;
+  rdm_packet[11] = 0x00;
+  rdm_packet[12] = 0x00;
+  rdm_packet[13] = 0x00;
+  rdm_packet[14] = 0x01;
+
+  static uint8_t transaction_num = 0;
+  rdm_packet[15] = transaction_num++; // Transaction Number
+  rdm_packet[16] = 0x01; // Port ID / Response Type
+  rdm_packet[17] = 0x00; // Message Count
+  rdm_packet[18] = 0x00; // Sub-Device MSB
+  rdm_packet[19] = 0x00; // Sub-Device LSB
+
+  rdm_packet[20] = 0x30; // Command Class: SET_COMMAND
+  rdm_packet[21] = 0x00; // Parameter ID MSB (DMX_START_ADDRESS = 0x00F0)
+  rdm_packet[22] = 0xF0; // Parameter ID LSB
+  rdm_packet[23] = 0x02; // Parameter Data Length (2 bytes para o endereço)
+
+  // Parameter Data: Novo endereço DMX em 16-bit (Big Endian)
+  rdm_packet[24] = (novoCanal >> 8) & 0xFF;
+  rdm_packet[25] = novoCanal & 0xFF;
+
+  // Calcula Checksum de 16 bits (soma de todos os bytes de 0 a 25)
+  uint16_t checksum = 0;
+  for (int i = 0; i < 26; i++) {
+    checksum += rdm_packet[i];
+  }
+
+  rdm_packet[26] = (checksum >> 8) & 0xFF;
+  rdm_packet[27] = checksum & 0xFF;
+
+  // Envia fisicamente o pacote na linha
+  setRS485Direction(true); // Muda o transceptor para modo Transmissão (Pino 3 = HIGH)
+
+  // Envia BREAK DMX (pelo menos 176us em nível lógico baixo)
+  uart_set_line_inverse(DMX_UART_NUM, UART_SIGNAL_TXD_INV);
+  delayMicroseconds(180);
+
+  // Envia MAB DMX (pelo menos 12us em nível lógico alto)
+  uart_set_line_inverse(DMX_UART_NUM, 0);
+  delayMicroseconds(20);
+
+  // Transmite os 28 bytes do pacote RDM via UART
+  uart_write_bytes(DMX_UART_NUM, (const char*)rdm_packet, 28);
+
+  setRS485Direction(false); // Retorna para modo Recepção (Pino 3 = LOW) para ouvir respostas
+  Serial.print("RDM SET_COMMAND enviado fisicamente para UID ");
+  Serial.print(uidStr);
+  Serial.print(" -> Novo Canal DMX: ");
+  Serial.println(novoCanal);
+}
+
 void executarVarreduraRDM() {
   if (!dispositivoConectado || !autenticado) return;
 
@@ -368,8 +458,8 @@ void processarBluetooth() {
     if (commaIdx != -1) {
       String uid = val.substring(0, commaIdx);
       int canal = val.substring(commaIdx + 1).toInt();
-      // O ESP32 pode processar remotamente o endereco do refletor na linha fisica RDM
-      Serial.print("RDM SET DMX para UID "); Serial.print(uid); Serial.print(" -> "); Serial.println(canal);
+      // Envia o pacote RDM real físico pelo barramento
+      enviarRdmSetDmxAddress(uid, canal);
     } else {
       enderecoDMX = iv;
     }
