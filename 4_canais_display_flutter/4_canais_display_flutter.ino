@@ -3,6 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Preferences.h>
+#include "esp_mac.h"
 
 // --- INCLUDES SOLICITADOS ---
 #include "driver/uart.h"
