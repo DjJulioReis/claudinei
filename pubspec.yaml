@@ -1,0 +1,39 @@
+name: controle_dmx_wireless
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  universal_ble: any
+  url_launcher: ^6.3.2
+  permission_handler: ^12.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4 # O pacote fica listado aqui normalmente
+
+# --- CONFIGURAÇÃO EXCLUSIVA DO GERADOR DE ÍCONES ---
+# Totalmente colado na margem esquerda para evitar o erro de 'one source'
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/mileto_icon.png"
+
+# --- CONFIGURAÇÕES NATIVAS DO FLUTTER ---
+flutter:
+  uses-material-design: true
+
+  # Libera a pasta assets inteira para o projeto
+  assets:
+    - assets/
