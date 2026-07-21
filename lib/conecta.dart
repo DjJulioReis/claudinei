@@ -373,13 +373,17 @@ class _ConectaPageState extends State<ConectaPage> {
                           dropdownColor: const Color(0xFF1E1E1E),
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           items: dispositivosPareados.map((BleDevice value) {
+                            // Obtém os últimos 5 caracteres do ID físico/MAC para exibição rápida e limpa
+                            String idCurto = value.deviceId.length > 5
+                                ? value.deviceId.substring(value.deviceId.length - 5)
+                                : value.deviceId;
                             return DropdownMenuItem<BleDevice>(
                               value: value,
                               child: Row(
                                 children: [
                                   const Icon(Icons.bluetooth, color: Colors.amber, size: 18),
                                   const SizedBox(width: 10),
-                                  Text(value.name ?? "Sem nome"),
+                                  Text("${value.name ?? "Sem nome"} (ID: ${idCurto.toUpperCase()})"),
                                 ],
                               ),
                             );
