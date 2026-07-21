@@ -459,7 +459,7 @@ void processarBluetooth() {
       String testUid = uid;
       testUid.toUpperCase();
       testUid.replace(":", "");
-      if (testUid.contains("4D4900000101")) {
+      if (testUid.indexOf("4D4900000101") != -1) {
         enderecoDMX = canal;
         exibirTelaSalvando();
         salvarConfiguracao();
