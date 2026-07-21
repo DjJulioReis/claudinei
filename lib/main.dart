@@ -279,8 +279,11 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.sync, color: Colors.amberAccent),
               tooltip: "Re-escanear Barramento RDM",
               onPressed: () {
-                enviarComando("VARREDURA_RDM", "1");
-                _mostrarFeedback("Solicitando nova varredura física RDM...");
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => ConectaPage(activeDevice: _deviceAlvo),
+                  ),
+                );
               },
             ),
           if (_isCarregando) const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))

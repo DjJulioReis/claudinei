@@ -7,7 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'main.dart';
 
 class ConectaPage extends StatefulWidget {
-  const ConectaPage({super.key});
+  final BleDevice? activeDevice;
+  const ConectaPage({super.key, this.activeDevice});
 
   @override
   State<ConectaPage> createState() => _ConectaPageState();
@@ -34,7 +35,19 @@ class _ConectaPageState extends State<ConectaPage> {
   void initState() {
     super.initState();
     _configurarEscutaBLEConecta();
-    _iniciarDescobertaAutomatica();
+    if (widget.activeDevice != null) {
+      _deviceAlvo = widget.activeDevice;
+      _isConectado = true;
+      _autenticado = true;
+      _isCarregando = false;
+      // Dispara a varredura RDM imediatamente
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _enviarComando("VARREDURA_RDM", "1");
+        _mostrarFeedback("Atualizando barramento RDM...");
+      });
+    } else {
+      _iniciarDescobertaAutomatica();
+    }
   }
 
   void _configurarEscutaBLEConecta() {
