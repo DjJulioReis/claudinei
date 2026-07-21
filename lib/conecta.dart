@@ -304,11 +304,16 @@ class _ConectaPageState extends State<ConectaPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: const Text(
-          "VARREDURA RDM AUTOMÁTICA",
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber, fontSize: 16),
+        title: Text(
+          _autenticado ? "CONEXÃO AUTENTICADA" : "VARREDURA RDM AUTOMÁTICA",
+          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber, fontSize: 14),
         ),
         actions: [
+          if (_autenticado)
+            const Padding(
+              padding: EdgeInsets.only(right: 8.0),
+              child: Icon(Icons.verified, color: Colors.greenAccent, size: 20),
+            ),
           _isCarregando
               ? const Padding(
                   padding: EdgeInsets.all(16.0),
@@ -373,7 +378,6 @@ class _ConectaPageState extends State<ConectaPage> {
                           dropdownColor: const Color(0xFF1E1E1E),
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           items: dispositivosPareados.map((BleDevice value) {
-                            // Obtém os últimos 5 caracteres do ID físico/MAC para exibição rápida e limpa
                             String idCurto = value.deviceId.length > 5
                                 ? value.deviceId.substring(value.deviceId.length - 5)
                                 : value.deviceId;
