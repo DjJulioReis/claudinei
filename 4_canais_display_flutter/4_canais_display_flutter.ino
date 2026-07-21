@@ -12,9 +12,6 @@
 #include "soc/rtc_cntl_reg.h"
 #include <NimBLEDevice.h>
 #include "MILETO_LOGO_1.h"
-#include "RDMManager.h"
-
-RDMManager* rdmManager = nullptr;
 
 #define LARGURA_TELA 128
 #define ALTURA_TELA 64
@@ -296,17 +293,6 @@ void lidarComEncoder() {
   lastSwState = currentSwState;
 }
 
-void setRS485Direction(bool transmitir) {
-  pinMode(RS485_DIR_PIN, OUTPUT);
-  if (transmitir) {
-    digitalWrite(RS485_DIR_PIN, HIGH);
-    delayMicroseconds(5);
-  } else {
-    uart_wait_tx_done(DMX_UART_NUM, portMAX_DELAY);
-    digitalWrite(RS485_DIR_PIN, LOW);
-  }
-}
-
 // Função para obter o Device ID único de 32 bits baseado no endereço MAC físico do ESP32-C3
 uint32_t obterDeviceIDUnico() {
   uint8_t mac[6];
@@ -548,42 +534,15 @@ void executarEfeitos(int modo) {
 void processarDMX() {
   uart_event_t evt;
   while (xQueueReceive(dmx_queue, (void*)&evt, 0)) {
-    if (evt.type == UART_BREAK) {
-      uart_flush_input(DMX_UART_NUM);
-      dmx_idx = 0;
-      dmx_em_frame = true;
-    }
+    if (evt.type == UART_BREAK) { uart_flush_input(DMX_UART_NUM); dmx_idx = 0; dmx_em_frame = true; }
     else if (evt.type == UART_DATA && dmx_em_frame) {
       size_t l = 0; uart_get_buffered_data_len(DMX_UART_NUM, &l);
       if (l > 0) {
         uint8_t t[64]; int r = uart_read_bytes(DMX_UART_NUM, t, (l > 64) ? 64 : l, 0);
         for (int i = 0; i < r; i++) {
           if (dmx_em_frame) {
-            if (dmx_idx < 520) raw_dmx_buf[dmx_idx] = t[i];
-            dmx_idx++;
-
-            // Se for pacote RDM (Start Code = 0xCC)
-            if (raw_dmx_buf[0] == 0xCC) {
-              if (dmx_idx >= 3) {
-                uint8_t rdm_len = raw_dmx_buf[2]; // Message Length
-                if (dmx_idx >= (rdm_len + 2)) { // Cabeçalho + Dados + 2 bytes Checksum
-                  // Recebimento completo do pacote RDM!
-                  uint8_t tx_buf[257];
-                  size_t tx_len = 0;
-                  if (rdmManager != nullptr) {
-                    tx_len = rdmManager->processRDMPacket(raw_dmx_buf, dmx_idx, tx_buf);
-                  }
-                  if (tx_len > 0) {
-                    setRS485Direction(true);
-                    uart_write_bytes(DMX_UART_NUM, (const char*)tx_buf, tx_len);
-                    setRS485Direction(false);
-                  }
-                  dmx_em_frame = false;
-                }
-              }
-            }
-            // Se for pacote DMX tradicional (Start Code = 0x00)
-            else if (dmx_idx >= (enderecoDMX + 7)) {
+            if (dmx_idx < 520) raw_dmx_buf[dmx_idx] = t[i]; dmx_idx++;
+            if (dmx_idx >= (enderecoDMX + 7)) {
               if (raw_dmx_buf[0] == 0x00) {
                 int idx = enderecoDMX;
                 for(int c=0; c<4; c++) brilhoCanais[c] = raw_dmx_buf[idx+c];
@@ -608,15 +567,12 @@ void desenharLogo(const unsigned char* bitmap, int largura, int altura) {
 }
 
 void setup() {
-  rdmManager = new RDMManager(enderecoDMX, salvarConfiguracao);
   Serial.begin(115200);
   Serial.println("MILETO STARTING...");
   tempoUltimaAtividade = millis();
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
-  pinMode(RS485_DIR_PIN, OUTPUT);
-  digitalWrite(RS485_DIR_PIN, LOW); // Recepção padrão
   lastClkState = digitalRead(ENC_CLK);
   ledcAttach(MOSFET_CH1, PWM_FREQ, PWM_RES);
   ledcAttach(MOSFET_CH2, PWM_FREQ, PWM_RES);
