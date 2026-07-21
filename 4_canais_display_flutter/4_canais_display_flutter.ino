@@ -312,6 +312,11 @@ String obterUIDString() {
   return String(buf);
 }
 
+void setRS485Direction(bool tx) {
+  pinMode(RS485_DIR_PIN, OUTPUT);
+  digitalWrite(RS485_DIR_PIN, tx ? HIGH : LOW);
+}
+
 // Converte uma string UID formatada "4D49:00000101" em bytes
 void parseUID(String uidStr, uint8_t *man_id, uint8_t *dev_id) {
   uidStr.replace(":", "");
@@ -570,6 +575,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("MILETO STARTING...");
   tempoUltimaAtividade = millis();
+  pinMode(RS485_DIR_PIN, OUTPUT);
+  digitalWrite(RS485_DIR_PIN, LOW); // Inicia em modo recepção
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
