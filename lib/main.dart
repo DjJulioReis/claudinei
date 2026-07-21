@@ -274,6 +274,15 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text("MILETO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
         actions: [
+          if (_isConectado)
+            IconButton(
+              icon: const Icon(Icons.sync, color: Colors.amberAccent),
+              tooltip: "Re-escanear Barramento RDM",
+              onPressed: () {
+                enviarComando("VARREDURA_RDM", "1");
+                _mostrarFeedback("Solicitando nova varredura física RDM...");
+              },
+            ),
           if (_isCarregando) const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
           else IconButton(icon: Icon(_isConectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled, color: _isConectado ? Colors.greenAccent : Colors.redAccent), onPressed: _inicializarEConectarBluetooth)
         ],
