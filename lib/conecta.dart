@@ -420,16 +420,35 @@ class _ConectaPageState extends State<ConectaPage> {
                   ),
                 )
               ] else ...[
-                const Row(
-                  children: [
-                    Icon(Icons.devices_other, color: Colors.amber, size: 20),
-                    SizedBox(width: 10),
-                    Text(
-                      "APARELHOS RDM ENCONTRADOS",
-                      style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.devices_other, color: Colors.amber, size: 20),
+                      SizedBox(width: 10),
+                      Text(
+                        "APARELHOS RDM",
+                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
+                      ),
+                    ],
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        aparelhosRDMDescobertos.clear();
+                      });
+                      _enviarComando("VARREDURA_RDM", "1");
+                      _mostrarFeedback("Solicitando nova varredura física...");
+                    },
+                    icon: const Icon(Icons.sync, color: Colors.amber, size: 16),
+                    label: const Text(
+                      "RE-ESCANEAR",
+                      style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
                 const SizedBox(height: 12),
 
                 ListView.builder(

@@ -303,6 +303,25 @@ void setRS485Direction(bool transmitir) {
   }
 }
 
+// Função para obter o Device ID único de 32 bits baseado no endereço MAC físico do ESP32-C3
+uint32_t obterDeviceIDUnico() {
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  uint32_t deviceID = ((uint32_t)mac[2] << 24) |
+                      ((uint32_t)mac[3] << 16) |
+                      ((uint32_t)mac[4] << 8)  |
+                      (uint32_t)mac[5];
+  return deviceID;
+}
+
+// Retorna o UID completo formatado como string, ex: "4D49:A1B2C3D4"
+String obterUIDString() {
+  uint32_t dev_id = obterDeviceIDUnico();
+  char buf[20];
+  sprintf(buf, "4D49:%08X", dev_id);
+  return String(buf);
+}
+
 // Converte uma string UID formatada "4D49:00000101" em bytes
 void parseUID(String uidStr, uint8_t *man_id, uint8_t *dev_id) {
   uidStr.replace(":", "");
@@ -402,8 +421,10 @@ void executarVarreduraRDM() {
 
   // Como esta placa é a própria controladora da Pista Paris, ela reporta apenas o seu próprio ID RDM único!
   // Formato: RDM_DEV:<UID_FABRICANTE>,<UID_DISPOSITIVO>,<ENDERECO_DMX>,<QTD_CANAIS>,<NOME_MODELO>
-  String devPayload = "RDM_DEV:4d49,00000101," + String(enderecoDMX) + ",4,PISTA_PARIS_4CH\n";
-  pTxCharacteristic->setValue(devPayload.c_str());
+  uint32_t dev_id = obterDeviceIDUnico();
+  char buf[45];
+  sprintf(buf, "RDM_DEV:4d49,%08X,%d,4,PISTA_PARIS_4CH\n", dev_id, enderecoDMX);
+  pTxCharacteristic->setValue(buf);
   pTxCharacteristic->notify();
   delay(300);
 
@@ -459,7 +480,13 @@ void processarBluetooth() {
       String testUid = uid;
       testUid.toUpperCase();
       testUid.replace(":", "");
-      if (testUid.indexOf("4D4900000101") != -1) {
+
+      // Gera o UID local para comparação dinâmica
+      String localUid = obterUIDString();
+      localUid.toUpperCase();
+      localUid.replace(":", "");
+
+      if (testUid.indexOf(localUid) != -1) {
         enderecoDMX = canal;
         exibirTelaSalvando();
         salvarConfiguracao();
