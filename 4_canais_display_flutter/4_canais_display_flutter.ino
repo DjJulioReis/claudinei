@@ -14,7 +14,7 @@
 #include "MILETO_LOGO_1.h"
 #include "RDMManager.h"
 
-RDMManager rdmManager(enderecoDMX, salvarConfiguracao);
+RDMManager* rdmManager = nullptr;
 
 #define LARGURA_TELA 128
 #define ALTURA_TELA 64
@@ -569,7 +569,10 @@ void processarDMX() {
                 if (dmx_idx >= (rdm_len + 2)) { // Cabeçalho + Dados + 2 bytes Checksum
                   // Recebimento completo do pacote RDM!
                   uint8_t tx_buf[257];
-                  size_t tx_len = rdmManager.processRDMPacket(raw_dmx_buf, dmx_idx, tx_buf);
+                  size_t tx_len = 0;
+                  if (rdmManager != nullptr) {
+                    tx_len = rdmManager->processRDMPacket(raw_dmx_buf, dmx_idx, tx_buf);
+                  }
                   if (tx_len > 0) {
                     setRS485Direction(true);
                     uart_write_bytes(DMX_UART_NUM, (const char*)tx_buf, tx_len);
@@ -605,6 +608,7 @@ void desenharLogo(const unsigned char* bitmap, int largura, int altura) {
 }
 
 void setup() {
+  rdmManager = new RDMManager(enderecoDMX, salvarConfiguracao);
   Serial.begin(115200);
   Serial.println("MILETO STARTING...");
   tempoUltimaAtividade = millis();

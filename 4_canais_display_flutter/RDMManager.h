@@ -2,6 +2,7 @@
 #define RDMMANAGER_H
 
 #include <Arduino.h>
+#include "esp_mac.h"
 #include "UID.h"
 #include "CRC.h"
 #include "PacketParser.h"
