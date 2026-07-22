@@ -641,15 +641,37 @@ class LedGridPainter extends CustomPainter {
     double sw = size.width / gridSize, sh = size.height / gridSize;
     for (int i = 0; i < gridSize * gridSize; i++) {
       int r = i ~/ gridSize, c = i % gridSize;
-      int chF = (r + c) % 2 == 0 ? 0 : 2, chQ = (r + c) % 2 == 0 ? 1 : 3;
-      double nf = niveisCanais[chF] / 100.0, nq = niveisCanais[chQ] / 100.0;
-      final Rect rect = Rect.fromLTWH(c * sw, r * sh, sw - 2, sh - 2);
-      if (nf == 0 && nq == 0) canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
-      else {
-        double t = (nf + nq).clamp(0.001, 2.0);
-        int red = ((224 * nf + 255 * nq) / t).round(), green = ((232 * nf + 227 * nq) / t).round(), blue = ((255 * nf + 163 * nq) / t).round();
-        canvas.drawRect(rect, Paint()..color = Color.fromARGB(255, red, green, blue).withOpacity((t / 1.5).clamp(0.3, 1.0)));
-      }
+
+      double x = c * sw;
+      double y = r * sh;
+      double w = sw - 2;
+      double h = sh - 2;
+
+      // Subdivide cada placa do piso em 4 quadrantes para representar as 4 cores correspondentes aos 4 canais
+      double halfW = w / 2;
+      double halfH = h / 2;
+
+      // Escala os níveis de cada canal de 0.0 a 1.0
+      double n1 = niveisCanais[0] / 100.0;
+      double n2 = niveisCanais[1] / 100.0;
+      double n3 = niveisCanais[2] / 100.0;
+      double n4 = niveisCanais[3] / 100.0;
+
+      // Quadrante superior esquerdo - CH1 (Branco Frio - Cyan)
+      final Rect q1 = Rect.fromLTWH(x, y, halfW, halfH);
+      canvas.drawRect(q1, Paint()..color = Colors.cyan.withOpacity(n1.clamp(0.1, 1.0)));
+
+      // Quadrante superior direito - CH2 (Branco Quente - Laranja)
+      final Rect q2 = Rect.fromLTWH(x + halfW, y, halfW, halfH);
+      canvas.drawRect(q2, Paint()..color = Colors.orange.withOpacity(n2.clamp(0.1, 1.0)));
+
+      // Quadrante inferior esquerdo - CH3 (Amber - Amarelo)
+      final Rect q3 = Rect.fromLTWH(x, y + halfH, halfW, halfH);
+      canvas.drawRect(q3, Paint()..color = Colors.amber.withOpacity(n3.clamp(0.1, 1.0)));
+
+      // Quadrante inferior direito - CH4 (Azul ou RGB complementar)
+      final Rect q4 = Rect.fromLTWH(x + halfW, y + halfH, halfW, halfH);
+      canvas.drawRect(q4, Paint()..color = Colors.blue.withOpacity(n4.clamp(0.1, 1.0)));
     }
   }
   @override

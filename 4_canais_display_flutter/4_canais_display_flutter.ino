@@ -568,7 +568,13 @@ void executarEfeitos(int modo) {
         }
         break;
 
-      case 5: // MODO 5: XADREZ (1+3 e depois 2+4)
+      case 5: // MODO 5: FIXO (Todos os 4 canais 100% acesos)
+        for(int i = 0; i < 4; i++) {
+          writeChannel(i, brilhoGeral);
+        }
+        break;
+
+      case 6: // MODO 6: XADREZ (1+3 e depois 2+4)
         if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d) {
           ultimaAtualizacaoEfeito = tempo;
           passoAlternado = !passoAlternado; // Alterna 0 e 1
@@ -580,12 +586,6 @@ void executarEfeitos(int modo) {
           writeChannel(1, v2_4); // Canal 2
           writeChannel(2, v1_3); // Canal 3
           writeChannel(3, v2_4); // Canal 4
-        }
-        break;
-
-      case 6: // MODO 6: FIXO (Todos os 4 canais 100% acesos)
-        for(int i = 0; i < 4; i++) {
-          writeChannel(i, brilhoGeral);
         }
         break;
     }
@@ -613,8 +613,8 @@ void processarDMX() {
                 else if (m <= 80) modoDMXTemp = 2;
                 else if (m <= 120) modoDMXTemp = 3;
                 else if (m <= 160) modoDMXTemp = 4;
-                else if (m <= 200) modoDMXTemp = 6; // FIXO
-                else modoDMXTemp = 5; // XADREZ
+                else if (m <= 200) modoDMXTemp = 5; // FIXO
+                else modoDMXTemp = 6; // XADREZ
               }
               dmx_em_frame = false;
             }
