@@ -58,7 +58,7 @@ int brilhoCanais[4] = {255, 255, 255, 255};
 int velocidadesCanais[4] = {100, 100, 100, 100};
 int niveisAtuais[4] = {0, 0, 0, 0};
 
-const char* nomesEfeitos[] = { "DMX SYSTEM", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO" };
+const char* nomesEfeitos[] = { "DMX SYSTEM", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO", "XADREZ" };
 
 unsigned long tempoUltimaAtividade = 0;
 bool telaAcesa = true;
@@ -235,8 +235,8 @@ void lidarComEncoder() {
     bool subindo = digitalRead(ENC_DT) != currentClkState;
     if (faseAtual == FASE_MODO) {
       static int selection = sistemaEmModoDMX ? 0 : modoAtual;
-      if (subindo) selection = (selection + 1) % 6;
-      else selection = (selection <= 0) ? 5 : selection - 1;
+      if (subindo) selection = (selection + 1) % 7;
+      else selection = (selection <= 0) ? 6 : selection - 1;
 
       if (selection == 0) { sistemaEmModoDMX = true; }
       else { sistemaEmModoDMX = false; modoAtual = selection; }
@@ -500,38 +500,94 @@ void processarBluetooth() {
 void executarEfeitos(int modo) {
   unsigned long tempo = millis();
   int d = map(velocidad, 0, 100, 800, 25);
-  if (modo == 1) { // MANUAL
-      static unsigned long ts[4] = {0,0,0,0}; static bool sts[4] = {0,0,0,0};
-      for(int i=0; i<4; i++){
-        if(sistemaEmModoDMX || velocidadesCanais[i] >= 100) sts[i] = 1;
-        else {
+
+  if (modo == 1) { // MODO 1: MANUAL / DMX INDIVIDUAL
+      static unsigned long ts[4] = {0, 0, 0, 0};
+      static bool sts[4] = {0, 0, 0, 0};
+
+      for(int i = 0; i < 4; i++) {
+        if(sistemaEmModoDMX || velocidadesCanais[i] >= 100) {
+          sts[i] = 1;
+        } else {
           int dv = map(velocidadesCanais[i], 0, 99, 800, 40);
-          if(tempo - ts[i] >= (unsigned long)dv){ ts[i] = tempo; sts[i] = !sts[i]; }
+          if(tempo - ts[i] >= (unsigned long)dv) {
+            ts[i] = tempo;
+            sts[i] = !sts[i];
+          }
         }
-        writeChannel(i, sts[i] ? (brilhoCanais[i]*brilhoGeral)/255 : 0);
+        writeChannel(i, sts[i] ? (brilhoCanais[i] * brilhoGeral) / 255 : 0);
       }
-  } else if (brilhoGeral == 0) { for(int i=0; i<4; i++) writeChannel(i, 0); }
+  }
+  else if (brilhoGeral == 0) { // APAGAR TUDO SE BRILHO GERAL FOR 0
+    for(int i = 0; i < 4; i++) {
+      writeChannel(i, 0);
+    }
+  }
   else {
     switch (modo) {
-      case 2: // FADE
+      case 2: // MODO 2: FADE (SUAVE)
         if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d / 12) {
-          ultimaAtualizacaoEfeito = tempo; if (fadeDirection) fadeValue++; else fadeValue--;
-          if (fadeValue >= 255) { fadeValue = 255; fadeDirection = false; } else if (fadeValue <= 0) { fadeValue = 0; fadeDirection = true; }
-          writeChannel(0, (fadeValue * brilhoGeral) / 255); writeChannel(1, ((255 - fadeValue) * brilhoGeral) / 255);
-          writeChannel(2, ((255 - fadeValue) * brilhoGeral) / 255); writeChannel(3, (fadeValue * brilhoGeral) / 255);
-        } break;
-      case 3: // STROBO
-        if (velocidad >= 100) for(int i=0; i<4; i++) writeChannel(i, brilhoGeral);
-        else if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d) {
-          ultimaAtualizacaoEfeito = tempo; estadoStrobo = !estadoStrobo;
-          int v = estadoStrobo ? brilhoGeral : 0; for(int i=0; i<4; i++) writeChannel(i, v);
-        } break;
-      case 4: // SEQUENC
+          ultimaAtualizacaoEfeito = tempo;
+
+          if (fadeDirection) fadeValue++;
+          else fadeValue--;
+
+          if (fadeValue >= 255) {
+            fadeValue = 255;
+            fadeDirection = false;
+          } else if (fadeValue <= 0) {
+            fadeValue = 0;
+            fadeDirection = true;
+          }
+
+          writeChannel(0, (fadeValue * brilhoGeral) / 255);
+          writeChannel(1, ((255 - fadeValue) * brilhoGeral) / 255);
+          writeChannel(2, ((255 - fadeValue) * brilhoGeral) / 255);
+          writeChannel(3, (fadeValue * brilhoGeral) / 255);
+        }
+        break;
+
+      case 3: // MODO 3: STROBO
+        if (velocidad >= 100) {
+          for(int i = 0; i < 4; i++) writeChannel(i, brilhoGeral);
+        } else if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d) {
+          ultimaAtualizacaoEfeito = tempo;
+          estadoStrobo = !estadoStrobo;
+          int v = estadoStrobo ? brilhoGeral : 0;
+          for(int i = 0; i < 4; i++) writeChannel(i, v);
+        }
+        break;
+
+      case 4: // MODO 4: SEQUENCIAL (1 -> 2 -> 3 -> 4)
         if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d) {
-          ultimaAtualizacaoEfeito = tempo; passoAlternado = (passoAlternado + 1) % 4;
-          for(int i=0; i<4; i++) writeChannel(i, (passoAlternado == i) ? brilhoGeral : 0);
-        } break;
-      case 5: for(int i=0; i<4; i++) writeChannel(i, brilhoGeral); break;
+          ultimaAtualizacaoEfeito = tempo;
+          passoAlternado = (passoAlternado + 1) % 4;
+          for(int i = 0; i < 4; i++) {
+            writeChannel(i, (passoAlternado == i) ? brilhoGeral : 0);
+          }
+        }
+        break;
+
+      case 5: // MODO 5: XADREZ (1+3 e depois 2+4)
+        if (tempo - ultimaAtualizacaoEfeito >= (unsigned long)d) {
+          ultimaAtualizacaoEfeito = tempo;
+          passoAlternado = !passoAlternado; // Alterna 0 e 1
+
+          int v1_3 = passoAlternado ? brilhoGeral : 0;
+          int v2_4 = passoAlternado ? 0 : brilhoGeral;
+
+          writeChannel(0, v1_3); // Canal 1
+          writeChannel(1, v2_4); // Canal 2
+          writeChannel(2, v1_3); // Canal 3
+          writeChannel(3, v2_4); // Canal 4
+        }
+        break;
+
+      case 6: // MODO 6: FIXO (Todos os 4 canais 100% acesos)
+        for(int i = 0; i < 4; i++) {
+          writeChannel(i, brilhoGeral);
+        }
+        break;
     }
   }
 }
@@ -553,8 +609,12 @@ void processarDMX() {
                 for(int c=0; c<4; c++) brilhoCanais[c] = raw_dmx_buf[idx+c];
                 brilhoGeral = raw_dmx_buf[idx+4]; velocidad = map(raw_dmx_buf[idx+5], 0, 255, 0, 100);
                 int m = raw_dmx_buf[idx+6];
-                if (m <= 50) modoDMXTemp = 1; else if (m <= 100) modoDMXTemp = 2;
-                else if (m <= 150) modoDMXTemp = 3; else if (m <= 200) modoDMXTemp = 4; else modoDMXTemp = 5;
+                if (m <= 40) modoDMXTemp = 1;
+                else if (m <= 80) modoDMXTemp = 2;
+                else if (m <= 120) modoDMXTemp = 3;
+                else if (m <= 160) modoDMXTemp = 4;
+                else if (m <= 200) modoDMXTemp = 6; // FIXO
+                else modoDMXTemp = 5; // XADREZ
               }
               dmx_em_frame = false;
             }

@@ -86,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final String _txUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   final String _rxUuid = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
-  List<String> modosLista = ["DMX", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO"];
+  List<String> modosLista = ["DMX", "MANUAL", "FADE", "STROBO", "SEQUENC", "FIXO", "XADREZ"];
   String _buffer = "";
   List<double> niveisReaisCanais = [0.0, 0.0, 0.0, 0.0];
   int canalManualSelecionado = 1;
