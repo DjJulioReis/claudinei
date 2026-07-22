@@ -603,18 +603,37 @@ void processarDMX() {
         for (int i = 0; i < r; i++) {
           if (dmx_em_frame) {
             if (dmx_idx < 520) raw_dmx_buf[dmx_idx] = t[i]; dmx_idx++;
-            if (dmx_idx >= (enderecoDMX + 7)) {
+            if (dmx_idx >= (enderecoDMX + 8)) {
               if (raw_dmx_buf[0] == 0x00) {
                 int idx = enderecoDMX;
-                for(int c=0; c<4; c++) brilhoCanais[c] = raw_dmx_buf[idx+c];
-                brilhoGeral = raw_dmx_buf[idx+4]; velocidad = map(raw_dmx_buf[idx+5], 0, 255, 0, 100);
+                // CH1-4: Brilho/Dimmer dos Canais 1 a 4
+                for(int c=0; c<4; c++) {
+                  brilhoCanais[c] = raw_dmx_buf[idx+c];
+                }
+
+                // CH5: Velocidade do Strobo (Se for maior que 10, força o modo Strobo de forma dinâmica)
+                int ch5_val = raw_dmx_buf[idx+4];
+
+                // CH6: Dimmer Geral (brilhoGeral)
+                brilhoGeral = raw_dmx_buf[idx+5];
+
+                // CH8: Velocidade Geral dos Efeitos
+                velocidad = map(raw_dmx_buf[idx+7], 0, 255, 0, 100);
+
+                // CH7: Seletor de Modo (0-40: Manual, 41-80: Fade, 81-120: Strobo, 121-160: Sequenc, 161-200: Fixo, 201-255: Xadrez)
                 int m = raw_dmx_buf[idx+6];
-                if (m <= 40) modoDMXTemp = 1;
-                else if (m <= 80) modoDMXTemp = 2;
-                else if (m <= 120) modoDMXTemp = 3;
-                else if (m <= 160) modoDMXTemp = 4;
-                else if (m <= 200) modoDMXTemp = 5; // FIXO
-                else modoDMXTemp = 6; // XADREZ
+                if (ch5_val > 10) {
+                  // O canal 5 tem prioridade para ativar o strobo e controlar sua velocidade
+                  modoDMXTemp = 3; // Strobo
+                  velocidad = map(ch5_val, 0, 255, 0, 100);
+                } else {
+                  if (m <= 40) modoDMXTemp = 1;       // MANUAL
+                  else if (m <= 80) modoDMXTemp = 2;  // FADE
+                  else if (m <= 120) modoDMXTemp = 3; // STROBO
+                  else if (m <= 160) modoDMXTemp = 4; // SEQUENC
+                  else if (m <= 200) modoDMXTemp = 5; // FIXO
+                  else modoDMXTemp = 6;               // XADREZ
+                }
               }
               dmx_em_frame = false;
             }

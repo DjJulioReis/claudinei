@@ -67,8 +67,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _abaAtiva = 0; // 0 = Console Paris, 1 = Mesa DMX 8 Canais
+  int _abaAtiva = 0; // 0 = Console Paris, 1 = Mesa DMX 8 Canais, 2 = Gravador de Cenas
   List<double> fadersDMX8 = List.generate(8, (_) => 0.0);
+
+  // Lista de Cenas Salvas na memória local (Cenas personalizadas)
+  List<Map<String, dynamic>> cenasSalvas = [];
+  bool executandoShow = false;
+  int indiceCenaShow = 0;
+  Timer? timerShow;
+  double tempoTransicaoShow = 2.0; // segundos
 
   int modoAtual = 0;
   double velocidad = 100;
@@ -412,6 +419,279 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Executa uma cena gravada enviando os parâmetros via BLE
+  void _dispararCena(Map<String, dynamic> cena) {
+    setState(() {
+      modoAtual = cena['modo'];
+      modoDMX = (modoAtual == 0);
+      velocidad = cena['vel'];
+      brilhoGeral = cena['dim'];
+      brilhoCanaisManuais = List<double>.from(cena['brilhos']);
+      velocidadesCanaisManuais = List<double>.from(cena['velocidades']);
+    });
+
+    enviarComando("SET_MODO", "$modoAtual");
+    enviarComando("SET_VEL", "${velocidad.round()}");
+    enviarComando("SET_DIM", "${brilhoGeral.round()}");
+    for (int i = 0; i < 4; i++) {
+      enviarComando("SET_CH${i + 1}", "${brilhoCanaisManuais[i].round()}");
+      enviarComando("SET_VCH${i + 1}", "${velocidadesCanaisManuais[i].round()}");
+    }
+  }
+
+  // Loop de reprodução automática do Show de Cenas
+  void _iniciarShowDeCenas() {
+    if (cenasSalvas.isEmpty) {
+      _mostrarFeedback("Nenhuma cena salva para iniciar o show.");
+      return;
+    }
+    setState(() {
+      executandoShow = true;
+      indiceCenaShow = 0;
+    });
+
+    _dispararCena(cenasSalvas[indiceCenaShow]);
+    _mostrarFeedback("▶️ Show Iniciado! Cena 1: ${cenasSalvas[indiceCenaShow]['nome']}");
+
+    timerShow?.cancel();
+    timerShow = Timer.periodic(Duration(milliseconds: (tempoTransicaoShow * 1000).round()), (timer) {
+      if (!mounted || !executandoShow) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        indiceCenaShow = (indiceCenaShow + 1) % cenasSalvas.length;
+      });
+      _dispararCena(cenasSalvas[indiceCenaShow]);
+      _mostrarFeedback("Cena ${indiceCenaShow + 1}: ${cenasSalvas[indiceCenaShow]['nome']}");
+    });
+  }
+
+  void _pararShowDeCenas() {
+    timerShow?.cancel();
+    setState(() {
+      executandoShow = false;
+    });
+    _mostrarFeedback("⏹️ Show Parado!");
+  }
+
+  Widget _buildTelaCenasEShow() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            color: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.video_collection, color: Colors.amber),
+                      SizedBox(width: 10),
+                      Text(
+                        "GRAVADOR DE CENAS E SHOWS",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "Capture a configuração atual de brilhos, velocidades e efeitos ativos para montar um show sequencial automático.",
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text("SALVAR CENA ATUAL", style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      final TextEditingController controller = TextEditingController(text: "Cena ${cenasSalvas.length + 1}");
+                      showDialog(
+                        context: context,
+                        builder: (context) {
+                          return AlertDialog(
+                            backgroundColor: const Color(0xFF1E1E1E),
+                            title: const Text("Salvar Nova Cena", style: TextStyle(color: Colors.amber, fontSize: 15, fontWeight: FontWeight.bold)),
+                            content: TextField(
+                              controller: controller,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: const InputDecoration(
+                                labelText: "Nome da Cena",
+                                labelStyle: TextStyle(color: Colors.grey),
+                                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.amber)),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                                onPressed: () {
+                                  setState(() {
+                                    cenasSalvas.add({
+                                      "nome": controller.text,
+                                      "modo": modoAtual,
+                                      "vel": velocidad,
+                                      "dim": brilhoGeral,
+                                      "brilhos": List<double>.from(brilhoCanaisManuais),
+                                      "velocidades": List<double>.from(velocidadesCanaisManuais),
+                                    });
+                                  });
+                                  Navigator.pop(context);
+                                  _mostrarFeedback("Cena '${controller.text}' gravada com sucesso!");
+                                },
+                                child: const Text("GRAVAR CENA", style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (cenasSalvas.isNotEmpty) ...[
+            Card(
+              color: const Color(0xFF1E1E1E),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      "PLAYLIST DO SHOW (LOOP SEQUENCIAL)",
+                      style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Intervalo: ${tempoTransicaoShow.toStringAsFixed(1)}s", style: const TextStyle(color: Colors.white70)),
+                        Expanded(
+                          child: Slider(
+                            value: tempoTransicaoShow,
+                            min: 1.0,
+                            max: 15.0,
+                            divisions: 14,
+                            activeColor: Colors.amber,
+                            onChanged: executandoShow ? null : (val) {
+                              setState(() {
+                                tempoTransicaoShow = val;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text("INICIAR SHOW", style: TextStyle(fontWeight: FontWeight.bold)),
+                            onPressed: executandoShow ? null : _iniciarShowDeCenas,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                            icon: const Icon(Icons.stop),
+                            label: const Text("PARAR SHOW", style: TextStyle(fontWeight: FontWeight.bold)),
+                            onPressed: !executandoShow ? null : _pararShowDeCenas,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: cenasSalvas.length,
+              itemBuilder: (context, index) {
+                final cena = cenasSalvas[index];
+                final bool estaAtivaNoShow = executandoShow && indiceCenaShow == index;
+                return Card(
+                  color: estaAtivaNoShow ? Colors.amber.withOpacity(0.15) : const Color(0xFF1E1E1E),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: estaAtivaNoShow ? Colors.amber : Colors.white10),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: estaAtivaNoShow ? Colors.amber : const Color(0xFF2E2E2E),
+                      foregroundColor: estaAtivaNoShow ? Colors.black : Colors.white70,
+                      child: Text("${index + 1}"),
+                    ),
+                    title: Text(cena['nome'], style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    subtitle: Text(
+                      "Modo: ${cena['modo'] == 0 ? 'DMX' : modosLista[cena['modo']]} | Brilho: ${cena['dim'].round()}% | Vel: ${cena['vel'].round()}%",
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.touch_app, color: Colors.amber, size: 20),
+                          tooltip: "Disparar Cena Individual",
+                          onPressed: () => _dispararCena(cena),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          tooltip: "Excluir Cena",
+                          onPressed: () {
+                            setState(() {
+                              cenasSalvas.removeAt(index);
+                              if (cenasSalvas.isEmpty && executandoShow) {
+                                _pararShowDeCenas();
+                              }
+                            });
+                            _mostrarFeedback("Cena removida!");
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ] else ...[
+            const SizedBox(height: 40),
+            const Center(
+              child: Text(
+                "NENHUMA CENA GRAVADA AINDA.\nConfigure sua pista e toque em 'Salvar Cena Atual'.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -440,7 +720,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _isCarregando ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(color: Colors.amber), SizedBox(height: 16), Text("Conectando...", style: TextStyle(color: Colors.grey))]))
             : (_isConectado == false) ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE ACIMA)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
             : !_isProdutoMileto ? _buildTelaProdutoNaoEncontrado()
-            : _abaAtiva == 1 ? _buildMesaDMX8() : SingleChildScrollView(
+            : _abaAtiva == 1 ? _buildMesaDMX8()
+            : _abaAtiva == 2 ? _buildTelaCenasEShow()
+            : SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -480,6 +762,10 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.tune),
             label: "Mesa 8 CHs",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.video_collection),
+            label: "Cenas & Show",
           ),
         ],
       ) : null,
