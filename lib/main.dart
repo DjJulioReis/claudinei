@@ -6,6 +6,9 @@ import 'package:universal_ble/universal_ble.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'conecta.dart';
+import 'pista_paris_page.dart';
+import 'pista_croma_page.dart';
+import 'mesa_dmx_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -68,7 +71,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _abaAtiva = 0; // 0 = Console Paris, 1 = Mesa DMX 8 Canais
+  int _abaAtiva = 0; // 0 = Pista Paris, 1 = Mesa DMX 8 Canais, 2 = Pista Croma RGB
   List<double> fadersDMX8 = List.generate(8, (_) => 0.0);
 
   // Lista de Cenas Salvas na memória local (Cenas personalizadas)
@@ -266,6 +269,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void enviarComando(String cmd, String val) async {
     if (_isConectado && _deviceAlvo != null) {
+      // Atendimento a comandos de incremento/decremento manuais
+      if (cmd == "DECREMENT_DMX") {
+        if (enderecoDMX > 1) {
+          setState(() => enderecoDMX--);
+          enviarComando("SET_DMX", "$enderecoDMX");
+        }
+        return;
+      }
+      if (cmd == "INCREMENT_DMX") {
+        if (enderecoDMX < 512) {
+          setState(() => enderecoDMX++);
+          enviarComando("SET_DMX", "$enderecoDMX");
+        }
+        return;
+      }
+
       String data = "$cmd:$val\n";
       Uint8List bytes = Uint8List.fromList(utf8.encode(data));
       try {
@@ -279,372 +298,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _mostrarFeedback(String msg) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
-
-  Future<void> _abrirSiteMileto() async {
-    final Uri url = Uri.parse('https://mileto.ind.br/');
-    if (!await launchUrl(url)) _mostrarFeedback("Não foi possível abrir o site.");
-  }
-
-  Widget _buildFaderCanal(int index) {
-    final int canal = index + 1;
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF121212),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          children: [
-            Text(
-              "CH $canal",
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.cyan, fontSize: 11),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                  ),
-                  child: Slider(
-                    value: fadersDMX8[index],
-                    min: 0,
-                    max: 255,
-                    divisions: 255,
-                    activeColor: Colors.cyan,
-                    inactiveColor: Colors.white10,
-                    onChanged: (val) {
-                      setState(() {
-                        fadersDMX8[index] = val;
-                      });
-                    },
-                    onChangeEnd: (val) {
-                      enviarComando("SET_CH$canal", "${val.round()}");
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "${fadersDMX8[index].round()}",
-              style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMesaDMX8() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            color: const Color(0xFF1E1E1E),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.tune, color: Colors.cyan, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            "MESA DMX MANUAL - 8 CANAIS",
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30)),
-                        onPressed: () {
-                          setState(() {
-                            fadersDMX8 = List.generate(8, (_) => 0.0);
-                          });
-                          for (int i = 1; i <= 8; i++) {
-                            enviarComando("SET_CH$i", "0");
-                          }
-                          _mostrarFeedback("Mesa DMX resetada!");
-                        },
-                        icon: const Icon(Icons.clear_all, color: Colors.redAccent, size: 16),
-                        label: const Text("Zerar", style: TextStyle(color: Colors.redAccent, fontSize: 10)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Grade 4x2 de faders para encaixar perfeitamente sem estourar a tela
-                  SizedBox(
-                    height: 380,
-                    child: Column(
-                      children: [
-                        // Linha Superior: CH 1 a 4
-                        Expanded(
-                          child: Row(
-                            children: [
-                              _buildFaderCanal(0),
-                              _buildFaderCanal(1),
-                              _buildFaderCanal(2),
-                              _buildFaderCanal(3),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Linha Inferior: CH 5 a 8
-                        Expanded(
-                          child: Row(
-                            children: [
-                              _buildFaderCanal(4),
-                              _buildFaderCanal(5),
-                              _buildFaderCanal(6),
-                              _buildFaderCanal(7),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Seção integrada de Cenas & Show (Gravador embutido diretamente na mesa DMX)
-          _buildPainelCenasIntegrado(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPainelCenasIntegrado() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          color: const Color(0xFF1E1E1E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.video_collection, color: Colors.amber, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      "GRAVADOR DE CENAS E SHOWS",
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "Grave os níveis atuais dos faders DMX (CH1 a CH8) como uma cena personalizada.",
-                  style: TextStyle(color: Colors.grey, fontSize: 11),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                  label: const Text("SALVAR NÍVEIS ATUAIS COMO CENA", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  onPressed: () {
-                    final TextEditingController controller = TextEditingController(text: "Cena ${cenasSalvas.length + 1}");
-                    showDialog(
-                      context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          title: const Text("Salvar Nova Cena DMX", style: TextStyle(color: Colors.amber, fontSize: 14, fontWeight: FontWeight.bold)),
-                          content: TextField(
-                            controller: controller,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: const InputDecoration(
-                              labelText: "Nome da Cena",
-                              labelStyle: TextStyle(color: Colors.grey),
-                              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.amber)),
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
-                            ),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                              onPressed: () {
-                                setState(() {
-                                  // Grava a cena com o estado atual dos 8 faders DMX e os canais manuais
-                                  cenasSalvas.add({
-                                    "nome": controller.text,
-                                    "modo": modoAtual,
-                                    "vel": velocidad,
-                                    "dim": brilhoGeral,
-                                    "faders": List<double>.from(fadersDMX8),
-                                    "brilhos": List<double>.from(brilhoCanaisManuais),
-                                    "velocidades": List<double>.from(velocidadesCanaisManuais),
-                                  });
-                                });
-                                Navigator.pop(context);
-                                _mostrarFeedback("Cena '${controller.text}' gravada com sucesso!");
-                              },
-                              child: const Text("GRAVAR CENA", style: TextStyle(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (cenasSalvas.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: const Color(0xFF1E1E1E),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    "PLAYLIST DO SHOW (LOOP SEQUENCIAL)",
-                    style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Intervalo: ${tempoTransicaoShow.toStringAsFixed(1)}s", style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      Expanded(
-                        child: Slider(
-                          value: tempoTransicaoShow,
-                          min: 1.0,
-                          max: 15.0,
-                          divisions: 14,
-                          activeColor: Colors.amber,
-                          onChanged: executandoShow ? null : (val) {
-                            setState(() {
-                              tempoTransicaoShow = val;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10)),
-                          icon: const Icon(Icons.play_arrow, size: 18),
-                          label: const Text("INICIAR SHOW", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          onPressed: executandoShow ? null : _iniciarShowDeCenas,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10)),
-                          icon: const Icon(Icons.stop, size: 18),
-                          label: const Text("PARAR SHOW", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          onPressed: !executandoShow ? null : _pararShowDeCenas,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: cenasSalvas.length,
-            itemBuilder: (context, index) {
-              final cena = cenasSalvas[index];
-              final bool estaAtivaNoShow = executandoShow && indiceCenaShow == index;
-              return Card(
-                color: estaAtivaNoShow ? Colors.amber.withOpacity(0.15) : const Color(0xFF1E1E1E),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: BorderSide(color: estaAtivaNoShow ? Colors.amber : Colors.white10),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: estaAtivaNoShow ? Colors.amber : const Color(0xFF2E2E2E),
-                    foregroundColor: estaAtivaNoShow ? Colors.black : Colors.white70,
-                    child: Text("${index + 1}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
-                  title: Text(cena['nome'], style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
-                  subtitle: Text(
-                    "Cena DMX Gravada",
-                    style: const TextStyle(color: Colors.grey, fontSize: 10),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.touch_app, color: Colors.amber, size: 20),
-                        tooltip: "Disparar Cena",
-                        onPressed: () => _dispararCena(cena),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                        tooltip: "Excluir Cena",
-                        onPressed: () {
-                          setState(() {
-                            cenasSalvas.removeAt(index);
-                            if (cenasSalvas.isEmpty && executandoShow) {
-                              _pararShowDeCenas();
-                            }
-                          });
-                          _mostrarFeedback("Cena removida!");
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ] else ...[
-          const SizedBox(height: 12),
-          const Center(
-            child: Text(
-              "Nenhuma cena gravada. Regule os faders acima e salve!",
-              style: TextStyle(color: Colors.white30, fontSize: 11),
-            ),
-          ),
-        ],
-      ],
-    );
   }
 
   // Executa uma cena gravada enviando os parâmetros via BLE
@@ -773,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.home, color: Colors.amber),
-              title: const Text("HOME", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              title: const Text("HOME WEBSITE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               onTap: () {
                 Navigator.pop(context);
                 _abrirLink("https://mileto.ind.br/");
@@ -824,28 +477,46 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _isCarregando ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(color: Colors.amber), SizedBox(height: 16), Text("Conectando...", style: TextStyle(color: Colors.grey))]))
             : (_isConectado == false) ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE ACIMA)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
             : !_isProdutoMileto ? _buildTelaProdutoNaoEncontrado()
-            : _abaAtiva == 1 ? _buildMesaDMX8()
-            : SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Card(
-                color: const Color(0xFF1E1E1E),
-                child: ListTile(
-                  title: Text(modoDMX ? "MODO DMX ATIVO" : "MODO MANUAL / DMX", style: TextStyle(fontWeight: FontWeight.bold, color: modoDMX ? Colors.cyan : Colors.amber)),
-                  trailing: Switch(value: modoDMX, activeColor: Colors.cyan, onChanged: (v) { setState(() { modoDMX = v; modoAtual = v ? 0 : 1; }); enviarComando("CHAVE_MODO", modoDMX ? "DMX" : "RF"); }),
-                ),
-              ),
-              const SizedBox(height: 12),
-              AnimatedSwitcher(duration: const Duration(milliseconds: 300), child: modoDMX ? _buildPainelDMX() : _buildPainelManuais()),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), icon: const Icon(Icons.save), label: const Text("GRAVAR NA MEMÓRIA"), onPressed: () => enviarComando("GRAVAR", "1")),
-              const SizedBox(height: 24),
-              _buildSimuladorPistaLed(),
-            ],
-          ),
-        ),
+            : _abaAtiva == 0 ? PistaParisPage(
+                modoAtual: modoAtual,
+                velocidad: velocidad,
+                brilhoGeral: brilhoGeral,
+                modoDMX: modoDMX,
+                tamanhoGrade: tamanhoGrade,
+                modosLista: modosLista,
+                niveisReaisCanais: niveisReaisCanais,
+                canalManualSelecionado: canalManualSelecionado,
+                brilhoCanaisManuais: brilhoCanaisManuais,
+                velocidadesCanaisManuais: velocidadesCanaisManuais,
+                enviarComando: enviarComando,
+                setTamanhoGrade: (v) => setState(() => tamanhoGrade = v),
+                setCanalManualSelecionado: (v) => setState(() => canalManualSelecionado = v),
+                setModoDMX: (v) => setState(() => modoDMX = v),
+                setModoAtual: (v) => setState(() => modoAtual = v),
+                setVelocidad: (v) => setState(() => velocidad = v),
+                setBrilhoGeral: (v) => setState(() => brilhoGeral = v),
+              )
+            : _abaAtiva == 1 ? MesaDmxPage(
+                fadersDMX8: fadersDMX8,
+                cenasSalvas: cenasSalvas,
+                executandoShow: executandoShow,
+                indiceCenaShow: indiceCenaShow,
+                tempoTransicaoShow: tempoTransicaoShow,
+                modosLista: modosLista,
+                modoAtual: modoAtual,
+                velocidad: velocidad,
+                brilhoGeral: brilhoGeral,
+                brilhoCanaisManuais: brilhoCanaisManuais,
+                velocidadesCanaisManuais: velocidadesCanaisManuais,
+                enviarComando: enviarComando,
+                mostrarFeedback: _mostrarFeedback,
+                dispararCena: _dispararCena,
+                iniciarShowDeCenas: _iniciarShowDeCenas,
+                pararShowDeCenas: _pararShowDeCenas,
+                setTempoTransicaoShow: (v) => setState(() => tempoTransicaoShow = v),
+                setCenasSalvas: (v) => setState(() => cenasSalvas = v),
+              )
+            : PistaCromaPage(enviarComando: enviarComando),
       ),
       bottomNavigationBar: _isConectado && _isProdutoMileto ? BottomNavigationBar(
         currentIndex: _abaAtiva,
@@ -866,195 +537,16 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.tune),
             label: "Mesa 8 CHs",
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.palette),
+            label: "Pista Croma",
+          ),
         ],
       ) : null,
     );
   }
 
   Widget _buildTelaProdutoNaoEncontrado() {
-    return Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.security, size: 80, color: Colors.orangeAccent), const SizedBox(height: 24), const Text("Aguardando validação...", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: const Size(double.infinity, 50)), onPressed: _abrirSiteMileto, child: const Text("SITE MILETO"))])));
+    return Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.security, size: 80, color: Colors.orangeAccent), const SizedBox(height: 24), const Text("Aguardando validação...", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: const Size(double.infinity, 50)), onPressed: () => _abrirLink("https://mileto.ind.br/"), child: const Text("SITE MILETO"))])));
   }
-
-  Widget _buildPainelDMX() {
-    return Column(
-      children: [
-        Card(
-          color: const Color(0xFF1E1E1E),
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                const Text("ENDEREÇO DMX ATUAL", style: TextStyle(color: Colors.grey)),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildDmxControlBtn(Icons.remove, () {
-                      if (enderecoDMX > 1) {
-                        setState(() => enderecoDMX--);
-                        enviarComando("SET_DMX", "$enderecoDMX");
-                      }
-                    }),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Text("$enderecoDMX", style: const TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.cyan)),
-                    ),
-                    _buildDmxControlBtn(Icons.add, () {
-                      if (enderecoDMX < 512) {
-                        setState(() => enderecoDMX++);
-                        enviarComando("SET_DMX", "$enderecoDMX");
-                      }
-                    }),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text("(Ajuste via Encoder ou Botões)", style: TextStyle(color: Colors.white24, fontSize: 11)),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDmxControlBtn(IconData icon, VoidCallback onPressed) {
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(30),
-      child: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          color: Colors.cyan.withOpacity(0.1),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.cyan.withOpacity(0.3), width: 2),
-        ),
-        child: Icon(icon, color: Colors.cyan, size: 30),
-      ),
-    );
-  }
-
-  Widget _buildPainelManuais() {
-    bool isManual = modoAtual == 1;
-    return Column(
-      children: [
-        Card(
-          color: const Color(0xFF1E1E1E),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: modosLista.length - 1,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 2.2),
-              itemBuilder: (context, index) {
-                final int idxModo = index + 1;
-                final bool sel = modoAtual == idxModo;
-                return ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white, padding: EdgeInsets.zero), onPressed: () { setState(() => modoAtual = idxModo); enviarComando("SET_MODO", "$modoAtual"); }, child: Text(modosLista[idxModo], style: const TextStyle(fontSize: 10)));
-              },
-            ),
-          ),
-        ),
-        if (isManual) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: const Color(0xFF1E1E1E),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: List.generate(4, (index) {
-                    final int canal = index + 1;
-                    final bool sel = canalManualSelecionado == canal;
-                    return Expanded(child: Padding(padding: EdgeInsets.only(right: index < 3 ? 8 : 0), child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: sel ? Colors.amber : const Color(0xFF2E2E2E), foregroundColor: sel ? Colors.black : Colors.white70, padding: EdgeInsets.zero), onPressed: () => setState(() => canalManualSelecionado = canal), child: Text("CH$canal"))));
-                  })),
-                  const Divider(height: 32, color: Colors.white10),
-                  _buildSliderRow("BRILHO CH$canalManualSelecionado", brilhoCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => brilhoCanaisManuais[canalManualSelecionado - 1] = val), "SET_CH$canalManualSelecionado"),
-                  const SizedBox(height: 12),
-                  _buildSliderRow("VELOCIDADE CH$canalManualSelecionado", velocidadesCanaisManuais[canalManualSelecionado - 1], (val) => setState(() => velocidadesCanaisManuais[canalManualSelecionado - 1] = val), "SET_VCH$canalManualSelecionado"),
-                ],
-              ),
-            ),
-          ),
-        ],
-        if (!isManual) ...[
-          const SizedBox(height: 8),
-          _buildSliderCard("VELOCIDADE EFEITO", velocidad, (val) => setState(() => velocidad = val), "SET_VEL"),
-          const SizedBox(height: 8),
-          _buildSliderCard("BRILHO GERAL", brilhoGeral, (val) => setState(() => brilhoGeral = val), "SET_DIM"),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildSliderRow(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
-    return Column(
-      children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(fontSize: 11)), Text("${val.toInt()}", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
-        Slider(value: val, min: min, max: max, divisions: (max - min).toInt(), activeColor: Colors.amber, onChanged: onCh, onChangeEnd: (v) => enviarComando(cmd, "${v.round()}")),
-      ],
-    );
-  }
-
-  Widget _buildSliderCard(String label, double val, Function(double) onCh, String cmd, {double min = 0, double max = 100}) {
-    return Card(color: const Color(0xFF1E1E1E), child: Padding(padding: const EdgeInsets.all(12), child: _buildSliderRow(label, val, onCh, cmd, min: min, max: max)));
-  }
-
-  Widget _buildSimuladorPistaLed() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
-      child: Column(
-        children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("ANÁLISE GERAL (PISO)", style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)), DropdownButton<int>(value: tamanhoGrade, dropdownColor: const Color(0xFF1E1E1E), items: [3, 4, 5, 6].map((int i) => DropdownMenuItem(value: i, child: Text("${i}x$i  "))).toList(), onChanged: (v) => setState(() => tamanhoGrade = v!))]),
-          const SizedBox(height: 12),
-          Container(width: 200, height: 200, decoration: BoxDecoration(color: const Color(0xFF0A0A0A), borderRadius: BorderRadius.circular(8)), child: CustomPaint(painter: LedGridPainter(gridSize: tamanhoGrade, niveisCanais: niveisReaisCanais))),
-          const SizedBox(height: 12),
-          Row(children: [Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "START"), child: const Text("TESTAR PISTA"))), const SizedBox(width: 8), Expanded(child: ElevatedButton(onPressed: () => enviarComando("EFEITO_PISTA", "CLEAR"), child: const Text("APAGAR")))]),
-        ],
-      ),
-    );
-  }
-}
-
-class LedGridPainter extends CustomPainter {
-  final int gridSize;
-  final List<double> niveisCanais;
-  LedGridPainter({required this.gridSize, required this.niveisCanais});
-  @override
-  void paint(Canvas canvas, Size size) {
-    double sw = size.width / gridSize, sh = size.height / gridSize;
-    for (int i = 0; i < gridSize * gridSize; i++) {
-      int r = i ~/ gridSize, c = i % gridSize;
-
-      final Rect rect = Rect.fromLTWH(c * sw, r * sh, sw - 2, sh - 2);
-
-      // Par (r + c) % 2 == 0: Mistura de canais 1 e 2 no mesmo espaço físico (Branco Frio e Branco Quente / Âmbar)
-      // Ímpar (r + c) % 2 != 0: Mistura de canais 3 e 4 no mesmo espaço físico (Branco Frio e Branco Quente / Âmbar)
-      bool ehPar = (r + c) % 2 == 0;
-      int ch1 = ehPar ? 0 : 2;
-      int ch2 = ehPar ? 1 : 3;
-
-      double n1 = niveisCanais[ch1] / 100.0;
-      double n2 = niveisCanais[ch2] / 100.0;
-
-      if (n1 == 0 && n2 == 0) {
-        canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
-      } else {
-        double total = (n1 + n2).clamp(0.001, 2.0);
-        // Cores base: Canal 1 e 3 representam Branco Frio (0xFFE0E8FF), Canal 2 e 4 representam Branco Quente/Âmbar (0xFFFFE3A3)
-        // Misturamos proporcionalmente no mesmo espaço físico!
-        int red = (((224 * n1) + (255 * n2)) / total).round();
-        int green = (((232 * n1) + (227 * n2)) / total).round();
-        int blue = (((255 * n1) + (163 * n2)) / total).round();
-
-        canvas.drawRect(
-          rect,
-          Paint()..color = Color.fromARGB(255, red, green, blue).withOpacity(((n1 + n2) / 1.5).clamp(0.3, 1.0)),
-        );
-      }
-    }
-  }
-  @override
-  bool shouldRepaint(covariant LedGridPainter old) => old.niveisCanais != niveisCanais || old.gridSize != gridSize;
 }
