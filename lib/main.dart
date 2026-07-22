@@ -67,8 +67,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _abaAtiva = 0; // 0 = Console Paris, 1 = Mesa DMX 16 Canais
-  List<double> fadersDMX16 = List.generate(16, (_) => 0.0);
+  int _abaAtiva = 0; // 0 = Console Paris, 1 = Mesa DMX 8 Canais
+  List<double> fadersDMX8 = List.generate(8, (_) => 0.0);
 
   int modoAtual = 0;
   double velocidad = 100;
@@ -271,9 +271,66 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await launchUrl(url)) _mostrarFeedback("Não foi possível abrir o site.");
   }
 
-  Widget _buildMesaDMX16() {
+  Widget _buildFaderCanal(int index) {
+    final int canal = index + 1;
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121212),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          children: [
+            Text(
+              "CH $canal",
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.cyan, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                  ),
+                  child: Slider(
+                    value: fadersDMX8[index],
+                    min: 0,
+                    max: 255,
+                    divisions: 255,
+                    activeColor: Colors.cyan,
+                    inactiveColor: Colors.white10,
+                    onChanged: (val) {
+                      setState(() {
+                        fadersDMX8[index] = val;
+                      });
+                    },
+                    onChangeEnd: (val) {
+                      enviarComando("SET_CH$canal", "${val.round()}");
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "${fadersDMX8[index].round()}",
+              style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMesaDMX8() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -281,99 +338,69 @@ class _HomeScreenState extends State<HomeScreen> {
             color: const Color(0xFF1E1E1E),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(12.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.tune, color: Colors.cyan),
+                          Icon(Icons.tune, color: Colors.cyan, size: 20),
                           SizedBox(width: 8),
                           Text(
-                            "MESA DMX MANUAL - 16 CANAIS",
+                            "MESA DMX MANUAL - 8 CANAIS",
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
                           ),
                         ],
                       ),
                       TextButton.icon(
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30)),
                         onPressed: () {
                           setState(() {
-                            fadersDMX16 = List.generate(16, (_) => 0.0);
+                            fadersDMX8 = List.generate(8, (_) => 0.0);
                           });
-                          for (int i = 1; i <= 16; i++) {
+                          for (int i = 1; i <= 8; i++) {
                             enviarComando("SET_CH$i", "0");
                           }
                           _mostrarFeedback("Mesa DMX resetada!");
                         },
-                        icon: const Icon(Icons.clear_all, color: Colors.redAccent, size: 18),
-                        label: const Text("Zerar Tudo", style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+                        icon: const Icon(Icons.clear_all, color: Colors.redAccent, size: 16),
+                        label: const Text("Zerar", style: TextStyle(color: Colors.redAccent, fontSize: 10)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  // Grade 4x2 de faders para encaixar perfeitamente sem estourar a tela
                   SizedBox(
-                    height: 340,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: 16,
-                      itemBuilder: (context, index) {
-                        final int canal = index + 1;
-                        return Container(
-                          width: 75,
-                          margin: const EdgeInsets.only(right: 12),
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF121212),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: Column(
+                    height: 380,
+                    child: Column(
+                      children: [
+                        // Linha Superior: CH 1 a 4
+                        Expanded(
+                          child: Row(
                             children: [
-                              Text(
-                                "CH $canal",
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.cyan, fontSize: 12),
-                              ),
-                              const SizedBox(height: 12),
-                              Expanded(
-                                child: RotatedBox(
-                                  quarterTurns: 3,
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 3,
-                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                                    ),
-                                    child: Slider(
-                                      value: fadersDMX16[index],
-                                      min: 0,
-                                      max: 255,
-                                      divisions: 255,
-                                      activeColor: Colors.cyan,
-                                      inactiveColor: Colors.white10,
-                                      onChanged: (val) {
-                                        setState(() {
-                                          fadersDMX16[index] = val;
-                                        });
-                                      },
-                                      onChangeEnd: (val) {
-                                        enviarComando("SET_CH$canal", "${val.round()}");
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                "${fadersDMX16[index].round()}",
-                                style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
-                              ),
+                              _buildFaderCanal(0),
+                              _buildFaderCanal(1),
+                              _buildFaderCanal(2),
+                              _buildFaderCanal(3),
                             ],
                           ),
-                        );
-                      },
+                        ),
+                        const SizedBox(height: 8),
+                        // Linha Inferior: CH 5 a 8
+                        Expanded(
+                          child: Row(
+                            children: [
+                              _buildFaderCanal(4),
+                              _buildFaderCanal(5),
+                              _buildFaderCanal(6),
+                              _buildFaderCanal(7),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -413,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _isCarregando ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(color: Colors.amber), SizedBox(height: 16), Text("Conectando...", style: TextStyle(color: Colors.grey))]))
             : (_isConectado == false) ? const Center(child: Text("DESCONECTADO\n(TOQUE NO ÍCONE ACIMA)", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
             : !_isProdutoMileto ? _buildTelaProdutoNaoEncontrado()
-            : _abaAtiva == 1 ? _buildMesaDMX16() : SingleChildScrollView(
+            : _abaAtiva == 1 ? _buildMesaDMX8() : SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -452,7 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.tune),
-            label: "Mesa 16 CHs",
+            label: "Mesa 8 CHs",
           ),
         ],
       ) : null,
