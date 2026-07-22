@@ -642,36 +642,32 @@ class LedGridPainter extends CustomPainter {
     for (int i = 0; i < gridSize * gridSize; i++) {
       int r = i ~/ gridSize, c = i % gridSize;
 
-      double x = c * sw;
-      double y = r * sh;
-      double w = sw - 2;
-      double h = sh - 2;
+      final Rect rect = Rect.fromLTWH(c * sw, r * sh, sw - 2, sh - 2);
 
-      // Subdivide cada placa do piso em 4 quadrantes para representar as 4 cores correspondentes aos 4 canais
-      double halfW = w / 2;
-      double halfH = h / 2;
+      // Par (r + c) % 2 == 0: Mistura de canais 1 e 2 no mesmo espaço físico (Branco Frio e Branco Quente / Âmbar)
+      // Ímpar (r + c) % 2 != 0: Mistura de canais 3 e 4 no mesmo espaço físico (Branco Frio e Branco Quente / Âmbar)
+      bool ehPar = (r + c) % 2 == 0;
+      int ch1 = ehPar ? 0 : 2;
+      int ch2 = ehPar ? 1 : 3;
 
-      // Escala os níveis de cada canal de 0.0 a 1.0
-      double n1 = niveisCanais[0] / 100.0;
-      double n2 = niveisCanais[1] / 100.0;
-      double n3 = niveisCanais[2] / 100.0;
-      double n4 = niveisCanais[3] / 100.0;
+      double n1 = niveisCanais[ch1] / 100.0;
+      double n2 = niveisCanais[ch2] / 100.0;
 
-      // Quadrante superior esquerdo - CH1 (Branco Frio - Cyan)
-      final Rect q1 = Rect.fromLTWH(x, y, halfW, halfH);
-      canvas.drawRect(q1, Paint()..color = Colors.cyan.withOpacity(n1.clamp(0.1, 1.0)));
+      if (n1 == 0 && n2 == 0) {
+        canvas.drawRect(rect, Paint()..color = Colors.grey.shade900);
+      } else {
+        double total = (n1 + n2).clamp(0.001, 2.0);
+        // Cores base: Canal 1 e 3 representam Branco Frio (0xFFE0E8FF), Canal 2 e 4 representam Branco Quente/Âmbar (0xFFFFE3A3)
+        // Misturamos proporcionalmente no mesmo espaço físico!
+        int red = (((224 * n1) + (255 * n2)) / total).round();
+        int green = (((232 * n1) + (227 * n2)) / total).round();
+        int blue = (((255 * n1) + (163 * n2)) / total).round();
 
-      // Quadrante superior direito - CH2 (Branco Quente - Laranja)
-      final Rect q2 = Rect.fromLTWH(x + halfW, y, halfW, halfH);
-      canvas.drawRect(q2, Paint()..color = Colors.orange.withOpacity(n2.clamp(0.1, 1.0)));
-
-      // Quadrante inferior esquerdo - CH3 (Amber - Amarelo)
-      final Rect q3 = Rect.fromLTWH(x, y + halfH, halfW, halfH);
-      canvas.drawRect(q3, Paint()..color = Colors.amber.withOpacity(n3.clamp(0.1, 1.0)));
-
-      // Quadrante inferior direito - CH4 (Azul ou RGB complementar)
-      final Rect q4 = Rect.fromLTWH(x + halfW, y + halfH, halfW, halfH);
-      canvas.drawRect(q4, Paint()..color = Colors.blue.withOpacity(n4.clamp(0.1, 1.0)));
+        canvas.drawRect(
+          rect,
+          Paint()..color = Color.fromARGB(255, red, green, blue).withOpacity(((n1 + n2) / 1.5).clamp(0.3, 1.0)),
+        );
+      }
     }
   }
   @override
