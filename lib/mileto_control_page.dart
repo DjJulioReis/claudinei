@@ -384,8 +384,10 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
                       setTargetPosition(motor, motor.targetPosition);
                     },
                   ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  Wrap(
+                    alignment: WrapAlignment.spaceEvenly,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       ElevatedButton(
                         onPressed: () {
@@ -396,8 +398,11 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
                           setState(() {});
                           setTargetPosition(motor, 0);
                         },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800]),
-                        child: const Text("Zerar Cabo"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey[800],
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        child: const Text("Zerar Cabo", style: TextStyle(fontSize: 11)),
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -408,8 +413,11 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
                           setState(() {});
                           setTargetPosition(motor, motor.targetPosition);
                         },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800]),
-                        child: const Text("Metade (200mm)"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey[800],
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        child: const Text("Metade (200mm)", style: TextStyle(fontSize: 11)),
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -420,32 +428,43 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
                           setState(() {});
                           setTargetPosition(motor, motor.targetPosition);
                         },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800]),
-                        child: const Text("Curso Máx (400mm)"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey[800],
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        child: const Text("Máx (400mm)", style: TextStyle(fontSize: 11)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  Wrap(
+                    alignment: WrapAlignment.spaceEvenly,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       ElevatedButton.icon(
                         onPressed: () {
                           triggerHoming(motor);
                           setModalState(() {});
                         },
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text("Zerar Motor"),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
+                        icon: const Icon(Icons.refresh, size: 14),
+                        label: const Text("Zerar Motor", style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green[800],
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        ),
                       ),
                       ElevatedButton.icon(
                         onPressed: () {
                           stopStepper(motor);
                           setModalState(() {});
                         },
-                        icon: const Icon(Icons.stop, size: 16),
-                        label: const Text("PARADA DE EMERGÊNCIA"),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red[800]),
+                        icon: const Icon(Icons.warning_amber_rounded, size: 14),
+                        label: const Text("PARADA EMERGÊNCIA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red[900],
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        ),
                       ),
                     ],
                   ),
@@ -606,51 +625,77 @@ class WinchKineticPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.width / 2;
-    final motorPaint = Paint()..color = Colors.grey[850]!..style = PaintingStyle.fill;
-    final motorOutline = Paint()..color = Colors.white24..strokeWidth = 2..style = PaintingStyle.stroke;
-    final motorRect = Rect.fromLTWH(center - 35, 15, 70, 50);
-    canvas.drawRect(motorRect, motorPaint);
-    canvas.drawRect(motorRect, motorOutline);
 
-    final linePaint = Paint()..color = Colors.black..strokeWidth = 3;
-    for (int i = 0; i < 5; i++) {
-      double y = 20.0 + (i * 9);
-      canvas.drawLine(Offset(center - 30, y), Offset(center + 30, y), linePaint);
+    // --- 1. DESENHO REALISTA DO MOTOR NEMA 34 ---
+    final motorPaint = Paint()..color = const Color(0xFF2C2C2C)..style = PaintingStyle.fill;
+    final motorOutline = Paint()..color = Colors.amber.withOpacity(0.5)..strokeWidth = 1.5..style = PaintingStyle.stroke;
+
+    // Retângulo arredondado do Motor
+    final RRect motorRRect = RRect.fromRectAndRadius(Rect.fromLTWH(center - 40, 10, 80, 55), const Radius.circular(6));
+    canvas.drawRRect(motorRRect, motorPaint);
+    canvas.drawRRect(motorRRect, motorOutline);
+
+    // Ranhuras de Resfriamento do Motor NEMA
+    final slotPaint = Paint()..color = const Color(0xDD000000)..strokeWidth = 3;
+    for (int i = 0; i < 6; i++) {
+      double y = 16.0 + (i * 8);
+      canvas.drawLine(Offset(center - 32, y), Offset(center + 32, y), slotPaint);
     }
 
-    final drumPaint = Paint()..color = Colors.blueGrey[800]!..style = PaintingStyle.fill;
-    final drumInnerPaint = Paint()..color = Colors.blueGrey[900]!..style = PaintingStyle.fill;
+    // --- 2. TAMBOR DO GUINCHO GIRATÓRIO (ROTAÇÃO VISUAL) ---
+    final drumPaint = Paint()..color = const Color(0xFF1E2E3A)..style = PaintingStyle.fill;
+    final drumBorder = Paint()..color = Colors.blueGrey..strokeWidth = 2..style = PaintingStyle.stroke;
 
-    canvas.drawCircle(Offset(center, 90), 30, drumPaint);
-    canvas.drawCircle(Offset(center, 90), 24, drumInnerPaint);
-    canvas.drawCircle(Offset(center, 90), 10, motorPaint);
+    // Desenha o flange esquerdo e direito do carretel
+    canvas.drawRect(Rect.fromLTWH(center - 30, 75, 60, 26), drumPaint);
+    canvas.drawRect(Rect.fromLTWH(center - 30, 75, 60, 26), drumBorder);
 
-    final cablePaint = Paint()..color = Colors.amber[300]!..strokeWidth = 2.5..style = PaintingStyle.stroke;
-    final targetCablePaint = Paint()..color = Colors.amber.withOpacity(0.3)..strokeWidth = 1.5..style = PaintingStyle.stroke;
+    // Linhas cênicas de cabo de aço enrolado no tambor (simula o cabo se acumulando)
+    final coilPaint = Paint()..color = Colors.grey..strokeWidth = 2;
+    int quantidadeEspiras = 8;
+    for (int i = 0; i < quantidadeEspiras; i++) {
+      double offset_x = (center - 24) + (i * 6.5);
+      canvas.drawLine(Offset(offset_x, 75), Offset(offset_x, 101), coilPaint);
+    }
 
-    final double pontoInicioCaboY = 90.0;
-    final double pontoInicioCaboX = center + 24;
+    // --- 3. CABOS DE AÇO DINÂMICOS (REAL-TIME) ---
+    final cablePaint = Paint()..color = const Color(0xFFD6D6D6)..strokeWidth = 2.5..style = PaintingStyle.stroke;
+    final targetCablePaint = Paint()..color = Colors.amber.withOpacity(0.25)..strokeWidth = 1.2..style = PaintingStyle.stroke;
+
+    final double pontoInicioCaboY = 101.0;
+    final double pontoInicioCaboX = center; // Centralizado saindo do carretel
     final double areaUtilPixelsY = size.height - pontoInicioCaboY - 60.0;
 
+    // Mapeamento realístico de MM para Pixels
     final double pixelsAlturaAtual = (alturaAtualMM / maxMM) * areaUtilPixelsY;
     final double pixelsAlturaAlvo = (alturaAlvoMM / maxMM) * areaUtilPixelsY;
 
     final double pontoFimCaboY_Atual = pontoInicioCaboY + pixelsAlturaAtual;
     final double pontoFimCaboY_Alvo = pontoInicioCaboY + pixelsAlturaAlvo;
 
+    // Linha translúcida do alvo programado
     canvas.drawLine(Offset(pontoInicioCaboX, pontoInicioCaboY), Offset(pontoInicioCaboX, pontoFimCaboY_Alvo), targetCablePaint);
 
-    final sphereTargetPaint = Paint()..color = Colors.amber.withOpacity(0.2)..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Alvo), 10, sphereTargetPaint);
+    // Globo translúcido representando o alvo programado (esfera de luz)
+    final targetSpherePaint = Paint()..color = Colors.amber.withOpacity(0.12)..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Alvo), 14, targetSpherePaint);
 
+    // Linha sólida do cabo de aço na posição em tempo real
     canvas.drawLine(Offset(pontoInicioCaboX, pontoInicioCaboY), Offset(pontoInicioCaboX, pontoFimCaboY_Atual), cablePaint);
 
-    final spherePaint = Paint()..color = Colors.amber[700]!..style = PaintingStyle.fill;
-    final sphereHighlight = Paint()..color = Colors.white38..style = PaintingStyle.fill;
+    // --- 4. GLOBO DE LUZ COM EFEITO DE GLOW (PONTO DE LUZ KINETIC) ---
+    // Desenha múltiplos círculos sobrepostos com opacidades para dar o brilho (glow) realista conforme sobe/desce
+    final Paint glow1 = Paint()..color = Colors.amber.withOpacity(0.15)..style = PaintingStyle.fill;
+    final Paint glow2 = Paint()..color = Colors.amber.withOpacity(0.35)..style = PaintingStyle.fill;
+    final Paint glow3 = Paint()..color = Colors.amber..style = PaintingStyle.fill;
+    final Paint glowCore = Paint()..color = Colors.white..style = PaintingStyle.fill;
 
-    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 11, spherePaint);
-    canvas.drawCircle(Offset(pontoInicioCaboX - 3, pontoFimCaboY_Atual - 3), 4, sphereHighlight);
+    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 26, glow1);
+    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 18, glow2);
+    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 12, glow3);
+    canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 6, glowCore);
 
+    // --- 5. RÉGUA DE ESCALA CÊNICA LATERAL (MÉTRICA) ---
     final textPaint = Paint()..color = Colors.white24..strokeWidth = 1;
     const int numDivisions = 4;
     for (int i = 0; i <= numDivisions; i++) {
@@ -658,12 +703,17 @@ class WinchKineticPainter extends CustomPainter {
       double y = pontoInicioCaboY + (pct * areaUtilPixelsY);
       double valorMM = pct * maxMM;
 
-      canvas.drawLine(Offset(pontoInicioCaboX - 60, y), Offset(pontoInicioCaboX - 45, y), textPaint);
+      // Riscos de marcação lateral
+      canvas.drawLine(Offset(pontoInicioCaboX - 45, y), Offset(pontoInicioCaboX - 35, y), textPaint);
 
-      final textSpan = TextSpan(text: "${valorMM.toStringAsFixed(0)}mm", style: const TextStyle(color: Colors.white24, fontSize: 9));
+      // Marcação numérica de Milímetros (0mm a 400mm)
+      final textSpan = TextSpan(
+        text: "${valorMM.toStringAsFixed(0)} mm",
+        style: const TextStyle(color: Colors.white24, fontSize: 9, fontWeight: FontWeight.bold),
+      );
       final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
       textPainter.layout();
-      textPainter.paint(canvas, Offset(pontoInicioCaboX - 100, y - 6));
+      textPainter.paint(canvas, Offset(center - 85, y - 6));
     }
   }
 
