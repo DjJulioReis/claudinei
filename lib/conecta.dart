@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:universal_ble/universal_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'main.dart';
+import 'mileto_control_page.dart';
 
 class ConectaPage extends StatefulWidget {
   final BleDevice? activeDevice;
@@ -81,17 +82,43 @@ class _ConectaPageState extends State<ConectaPage> {
             String dados = linha.replaceAll("RDM_DEV:", "");
             List<String> partes = dados.split(",");
             if (partes.length >= 5) {
+              String uidCompleto = "${partes[0].toUpperCase()}:${partes[1].toUpperCase()}";
+              String modelName = partes[4].toUpperCase();
+
               setState(() {
                 aparelhosRDMDescobertos.add({
-                  "uid": "${partes[0].toUpperCase()}:${partes[1].toUpperCase()}",
+                  "uid": uidCompleto,
                   "nome": partes[4].replaceAll("_", " "),
                   "dmx": int.tryParse(partes[2]) ?? 1,
                   "canais": int.tryParse(partes[3]) ?? 1,
                 });
               });
+
+              // --- REGRA DE REDIRECIONAMENTO AUTOMÁTICO DE ACORDO COM O PROTOCOLO ---
+              // Se detectar que o equipamento RDM físico é um Elevador / Motor Cinético
+              if (modelName.contains("ELEVADOR") || modelName.contains("KINETIC") || modelName.contains("MOTOR")) {
+                _mostrarFeedback("Elevador Cinético Identificado! Abrindo Painel...");
+                Future.delayed(const Duration(milliseconds: 600), () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (_) => MiletoControlPage(deviceAlvo: _deviceAlvo),
+                    ),
+                  );
+                });
+              } else {
+                // Se for Pista Paris / Outros, encaminha automaticamente para o HomeScreen
+                _mostrarFeedback("Piso de LED Paris Identificado! Abrindo Console...");
+                Future.delayed(const Duration(milliseconds: 600), () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (_) => HomeScreen(deviceAlvo: _deviceAlvo),
+                    ),
+                  );
+                });
+              }
             }
           } else if (linha == "RDM_END") {
-            _mostrarFeedback("Mapeamento concluído! ${aparelhosRDMDescobertos.length} aparelhos na linha.");
+            _mostrarFeedback("Mapeamento concluído!");
           }
         }
       }
@@ -222,83 +249,6 @@ class _ConectaPageState extends State<ConectaPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
-  void _abrirConfiguracaoDMX(Map<String, dynamic> aparelho) {
-    int dmxTemp = aparelho['dmx'];
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1E1E1E),
-              title: Text(
-                "CONFIGURAR DMX: ${aparelho['nome']}",
-                style: const TextStyle(color: Colors.amber, fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "UID: ${aparelho['uid']}",
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text("Endereço DMX Inicial:", style: TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle, color: Colors.amber, size: 32),
-                        onPressed: () {
-                          if (dmxTemp > 1) {
-                            setDialogState(() => dmxTemp--);
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        "$dmxTemp",
-                        style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 16),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle, color: Colors.amber, size: 32),
-                        onPressed: () {
-                          if (dmxTemp < 512) {
-                            setDialogState(() => dmxTemp++);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                  onPressed: () {
-                    setState(() {
-                      aparelho['dmx'] = dmxTemp;
-                    });
-                    _enviarComando("SET_DMX", "${aparelho['uid']},$dmxTemp");
-                    Navigator.pop(context);
-                    _mostrarFeedback("Endereço DMX alterado via RDM para Canal $dmxTemp!");
-                  },
-                  child: const Text("SALVAR REMOTAMENTE", style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -422,132 +372,24 @@ class _ConectaPageState extends State<ConectaPage> {
                 ),
               ],
             ] else ...[
-              if (aparelhosRDMDescobertos.isEmpty) ...[
-                const SizedBox(height: 80),
-                const Center(
-                  child: Column(
-                    children: [
-                      CircularProgressIndicator(color: Colors.amber),
-                      SizedBox(height: 20),
-                      Text(
-                        "Varrendo linha DMX física...",
-                        style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Buscando equipamentos RDM reais",
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                )
-              ] else ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              const SizedBox(height: 80),
+              const Center(
+                child: Column(
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.devices_other, color: Colors.amber, size: 20),
-                        SizedBox(width: 10),
-                        Text(
-                          "APARELHOS RDM",
-                          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
-                        ),
-                      ],
+                    CircularProgressIndicator(color: Colors.amber),
+                    SizedBox(height: 20),
+                    Text(
+                      "Identificando equipamento físico...",
+                      style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
                     ),
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          aparelhosRDMDescobertos.clear();
-                        });
-                        _enviarComando("VARREDURA_RDM", "1");
-                        _mostrarFeedback("Solicitando nova varredura física...");
-                      },
-                      icon: const Icon(Icons.sync, color: Colors.amber, size: 16),
-                      label: const Text(
-                        "RE-ESCANEAR",
-                        style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
-                      ),
+                    SizedBox(height: 8),
+                    Text(
+                      "Lendo assinatura RDM do barramento",
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: aparelhosRDMDescobertos.length,
-                  itemBuilder: (context, index) {
-                    final dev = aparelhosRDMDescobertos[index];
-                    return Card(
-                      color: const Color(0xFF1E1E1E),
-                      margin: const EdgeInsets.only(bottom: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: const BorderSide(color: Colors.white10),
-                      ),
-                      child: ListTile(
-                        onTap: () => _abrirConfiguracaoDMX(dev),
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.amber,
-                          foregroundColor: Colors.black,
-                          child: Icon(Icons.lightbulb_outline),
-                        ),
-                        title: Text(
-                          dev['nome'],
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          "ID (UID): ${dev['uid']} | Canais: ${dev['canais']}",
-                          style: const TextStyle(color: Colors.grey, fontSize: 11),
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.amber),
-                          ),
-                          child: Text(
-                            "DMX CH ${dev['dmx']}",
-                            style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 30),
-
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 4,
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (_) => HomeScreen(deviceAlvo: _deviceAlvo),
-                      ),
-                    );
-                  },
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.dashboard_customize, fontWeight: FontWeight.bold),
-                      SizedBox(width: 8),
-                      Text(
-                        "ABRIR CONSOLE PRINCIPAL",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              )
             ],
           ],
         ),
