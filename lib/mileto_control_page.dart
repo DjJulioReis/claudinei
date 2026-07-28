@@ -71,7 +71,13 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
   }
 
   void inicializarMotoresSimulados() {
-    // Inicializa com motores simulados para demonstração offline e facilidade de testes individuais
+    // Se o dispositivo BLE físico estiver conectado, NÃO inicializa motores simulados para evitar confusão!
+    if (widget.deviceAlvo != null || isConnected) {
+      motoresConectados = [];
+      return;
+    }
+
+    // Inicializa com motores simulados APENAS para demonstração offline e facilidade de testes individuais
     motoresConectados = [
       MotorCinetico(
         uid: "4D49:001F2A3B",
