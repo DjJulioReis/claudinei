@@ -234,7 +234,7 @@ void lidarComEncoder() {
     acordaTela();
     bool subindo = digitalRead(ENC_DT) != currentClkState;
     if (faseAtual == FASE_MODO) {
-      static int selection = sistemaEmModoDMX ? 0 : modoAtual;
+      int selection = sistemaEmModoDMX ? 0 : modoAtual;
       if (subindo) selection = (selection + 1) % 7;
       else selection = (selection <= 0) ? 6 : selection - 1;
 
@@ -277,7 +277,14 @@ void lidarComEncoder() {
     if (millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis();
       acordaTela();
-      if (faseAtual == FASE_MODO) { faseAtual = FASE_CAMPO; linhaSelecionada = 1; }
+      if (faseAtual == FASE_MODO) {
+        if (sistemaEmModoDMX) {
+          faseAtual = FASE_VALOR; // Vai direto para FASE_VALOR para ajustar o Canal DMX
+        } else {
+          faseAtual = FASE_CAMPO;
+        }
+        linhaSelecionada = 1;
+      }
       else if (faseAtual == FASE_CAMPO) { faseAtual = FASE_VALOR; }
       else if (faseAtual == FASE_VALOR) {
         exibirTelaSalvando(); salvarConfiguracao(); delay(500);

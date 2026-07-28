@@ -33,15 +33,15 @@ class MotorCinetico {
   });
 }
 
-class MiletoControlPage extends StatefulWidget {
+class MiletoMotorSineticoPage extends StatefulWidget {
   final BleDevice? deviceAlvo;
-  const MiletoControlPage({super.key, this.deviceAlvo});
+  const MiletoMotorSineticoPage({super.key, this.deviceAlvo});
 
   @override
-  State<MiletoControlPage> createState() => _MiletoControlPageState();
+  State<MiletoMotorSineticoPage> createState() => _MiletoMotorSineticoPageState();
 }
 
-class _MiletoControlPageState extends State<MiletoControlPage> {
+class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
   static const String serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   static const String txUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   static const String rxUuid = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";

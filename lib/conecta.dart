@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:universal_ble/universal_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'main.dart';
-import 'mileto_control_page.dart';
+import 'mileto_motor_sinetico_page.dart';
 
 class ConectaPage extends StatefulWidget {
   final BleDevice? activeDevice;
@@ -124,7 +124,7 @@ class _ConectaPageState extends State<ConectaPage> {
       _mostrarFeedback("Abrindo Painel de Motores Cinéticos para ${aparelho['nome']}...");
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => MiletoControlPage(deviceAlvo: _deviceAlvo),
+            builder: (_) => MiletoMotorSineticoPage(deviceAlvo: _deviceAlvo),
         ),
       );
     }

@@ -176,6 +176,47 @@ void processarBluetooth() {
   }
 }
 
+int lastClkState;
+unsigned long ultimoDebounce = 0;
+enum FasesMenu { FASE_DMX, FASE_ALTURA };
+FasesMenu faseAtual = FASE_DMX;
+
+void lidarComEncoder() {
+  int currentClkState = digitalRead(ENC_CLK);
+  if (currentClkState != lastClkState && currentClkState == LOW) {
+    bool subindo = digitalRead(ENC_DT) != currentClkState;
+    if (faseAtual == FASE_DMX) {
+      if (subindo) { dmxAddress++; if (dmxAddress > 512) dmxAddress = 1; }
+      else { dmxAddress--; if (dmxAddress < 1) dmxAddress = 512; }
+    } else {
+      if (subindo) {
+        targetPosMM = min(maxAlturaCaboMM, targetPosMM + 5.0);
+      } else {
+        targetPosMM = max(0.0, targetPosMM - 5.0);
+      }
+      targetPosition = (targetPosMM * stepsPerMM).toInt();
+    }
+  }
+  lastClkState = currentClkState;
+
+  int currentSwState = digitalRead(ENC_SW);
+  static int lastSwState = HIGH;
+  if (currentSwState != lastSwState && currentSwState == LOW) {
+    if (millis() - ultimoDebounce >= 250) {
+      ultimoDebounce = millis();
+      if (faseAtual == FASE_DMX) {
+        faseAtual = FASE_ALTURA;
+      } else {
+        faseAtual = FASE_DMX;
+        preferences.begin("mileto_cfg", false);
+        preferences.putInt("dmx", dmxAddress);
+        preferences.end();
+      }
+    }
+  }
+  lastSwState = currentSwState;
+}
+
 void gerenciarMovimentoMotor() {
   if (isHoming) {
     // Se estiver fazendo homing, desce o cabo até tocar o sensor home (LOW se acionado)
@@ -201,18 +242,23 @@ void gerenciarMovimentoMotor() {
 
 void atualizarOLED() {
   static unsigned long lastDraw = 0;
-  if (millis() - lastDraw >= 250) {
+  if (millis() - lastDraw >= 200) {
     lastDraw = millis();
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     display.print("--- GUINCHO KINETIC ---");
-    display.setCursor(0, 18);
+
+    display.setCursor(0, 16);
+    if (faseAtual == FASE_DMX) display.print("> "); else display.print("  ");
     display.print("DMX CH: "); display.print(dmxAddress);
-    display.setCursor(0, 34);
+
+    display.setCursor(0, 32);
     display.print("ALTURA REAL: "); display.print(currentPosMM, 1); display.print(" mm");
-    display.setCursor(0, 50);
+
+    display.setCursor(0, 48);
+    if (faseAtual == FASE_ALTURA) display.print("> "); else display.print("  ");
     display.print("ALTURA ALVO: "); display.print(targetPosMM, 1); display.print(" mm");
     display.display();
   }
@@ -239,6 +285,11 @@ void setup() {
   display.print("MOTOR CINETICO");
   display.display();
   delay(1500);
+
+  pinMode(ENC_CLK, INPUT_PULLUP);
+  pinMode(ENC_DT, INPUT_PULLUP);
+  pinMode(ENC_SW, INPUT_PULLUP);
+  lastClkState = digitalRead(ENC_CLK);
 
   preferences.begin("mileto_cfg", true);
   dmxAddress = preferences.getInt("dmx", 1);
@@ -269,6 +320,7 @@ void setup() {
 void loop() {
   if (novoComandoBle) { processarBluetooth(); novoComandoBle = false; comandoPendente = ""; }
 
+  lidarComEncoder();
   gerenciarMovimentoMotor();
   atualizarOLED();
   enviarEstatisticasBT();
