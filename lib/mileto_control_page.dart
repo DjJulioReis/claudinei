@@ -51,8 +51,9 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
   bool isAuthenticated = false;
   String _buffer = "";
 
-  // Lista de Motores Cinéticos Conectados / Detectados Individualmente
+  // Lista de Motores Cinéticos Conectados / Detectados
   List<MotorCinetico> motoresConectados = [];
+  int motorSelecionadoIdx = 0; // Índice do motor ativo/selecionado em controle
 
   // Constantes de cálculo baseadas em cabo de 400mm útil máximo
   static const double maxAlturaCaboMM = 400.0;
@@ -67,17 +68,11 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
       isAuthenticated = true;
     }
     _configurarEscutaBLEMotores();
-    inicializarMotoresSimulados();
+    inicializarMotores();
   }
 
-  void inicializarMotoresSimulados() {
-    // Se o dispositivo BLE físico estiver conectado, NÃO inicializa motores simulados para evitar confusão!
-    if (widget.deviceAlvo != null || isConnected) {
-      motoresConectados = [];
-      return;
-    }
-
-    // Inicializa com motores simulados APENAS para demonstração offline e facilidade de testes individuais
+  void inicializarMotores() {
+    // Inicializa com motores simulados para demonstração offline e facilidade de testes individuais
     motoresConectados = [
       MotorCinetico(
         uid: "4D49:001F2A3B",
@@ -142,6 +137,7 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
             setState(() {
               isAuthenticated = true;
               motoresConectados.clear();
+              motorSelecionadoIdx = 0;
             });
             sendRawCommand("VARREDURA_RDM:0");
           } else if (linha.startsWith("RDM_DEV:")) {
@@ -278,223 +274,30 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
     }
   }
 
-  void abrirProgramacaoIndividual(MotorCinetico motor) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.85,
-              decoration: const BoxDecoration(
-                color: Color(0xFF151515),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            motor.nome,
-                            style: const TextStyle(color: Colors.amber, fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            "UID RDM: ${motor.uid} | Canal DMX: ${motor.dmxAddress}",
-                            style: const TextStyle(color: Colors.white54, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                  const Divider(color: Colors.white24, height: 20),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white10),
-                            ),
-                            child: ClipRect(
-                              child: CustomPaint(
-                                painter: WinchKineticPainter(
-                                  alturaAtualMM: motor.currentPosMM,
-                                  alturaAlvoMM: motor.targetPosMM,
-                                  maxMM: maxAlturaCaboMM,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildTelemetryTile("Altura Real", "${motor.currentPosMM.toStringAsFixed(1)} mm", Colors.green),
-                              const SizedBox(height: 12),
-                              _buildTelemetryTile("Altura Alvo", "${motor.targetPosMM.toStringAsFixed(1)} mm", Colors.amber),
-                              const SizedBox(height: 12),
-                              _buildTelemetryTile("Passos Motor", "${motor.currentPosition}", Colors.white),
-                              const SizedBox(height: 12),
-                              _buildTelemetryTile("Calibrado", motor.isCalibrated ? "SIM" : "NÃO", motor.isCalibrated ? Colors.green : Colors.red),
-                              if (motor.isHoming) ...[
-                                const SizedBox(height: 12),
-                                const Row(
-                                  children: [
-                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
-                                    SizedBox(width: 8),
-                                    Text("Buscando Zero...", style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text("Programar Altura do Cabo (0 a 400mm)", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 14)),
-                  Slider(
-                    value: motor.targetPosMM,
-                    min: 0.0,
-                    max: maxAlturaCaboMM,
-                    divisions: 400,
-                    activeColor: Colors.amber[700],
-                    inactiveColor: Colors.white12,
-                    label: "${motor.targetPosMM.toStringAsFixed(0)} mm",
-                    onChanged: (val) {
-                      setModalState(() {
-                        motor.targetPosMM = val;
-                        motor.targetPosition = (val * stepsPerMM).toInt();
-                      });
-                      setState(() {});
-                      setTargetPosition(motor, motor.targetPosition);
-                    },
-                  ),
-                  Wrap(
-                    alignment: WrapAlignment.spaceEvenly,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () {
-                          setModalState(() {
-                            motor.targetPosMM = 0.0;
-                            motor.targetPosition = 0;
-                          });
-                          setState(() {});
-                          setTargetPosition(motor, 0);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueGrey[800],
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        child: const Text("Zerar Cabo", style: TextStyle(fontSize: 11)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          setModalState(() {
-                            motor.targetPosMM = maxAlturaCaboMM / 2;
-                            motor.targetPosition = (motor.targetPosMM * stepsPerMM).toInt();
-                          });
-                          setState(() {});
-                          setTargetPosition(motor, motor.targetPosition);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueGrey[800],
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        child: const Text("Metade (200mm)", style: TextStyle(fontSize: 11)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          setModalState(() {
-                            motor.targetPosMM = maxAlturaCaboMM;
-                            motor.targetPosition = (maxAlturaCaboMM * stepsPerMM).toInt();
-                          });
-                          setState(() {});
-                          setTargetPosition(motor, motor.targetPosition);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueGrey[800],
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        child: const Text("Máx (400mm)", style: TextStyle(fontSize: 11)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.spaceEvenly,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          triggerHoming(motor);
-                          setModalState(() {});
-                        },
-                        icon: const Icon(Icons.refresh, size: 14),
-                        label: const Text("Zerar Motor", style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green[800],
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          stopStepper(motor);
-                          setModalState(() {});
-                        },
-                        icon: const Icon(Icons.warning_amber_rounded, size: 14),
-                        label: const Text("PARADA EMERGÊNCIA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[900],
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   Widget _buildTelemetryTile(String label, String value, Color valColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-        Text(value, style: TextStyle(color: valColor, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(color: valColor, fontSize: 16, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Garante que o motor selecionado exista
+    if (motoresConectados.isEmpty) {
+      // Cria um motor mock default se a lista vier vazia para não dar erro
+      motoresConectados.add(MotorCinetico(
+        uid: "4D49:00000001",
+        nome: "Motor Cinético Principal",
+        dmxAddress: 1,
+      ));
+    }
+
+    final motorAtivo = motoresConectados[motorSelecionadoIdx < motoresConectados.length ? motorSelecionadoIdx : 0];
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
@@ -517,101 +320,224 @@ class _MiletoControlPageState extends State<MiletoControlPage> {
             ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Card(
-              color: isConnected ? const Color(0xFF1B2D1B) : const Color(0xFF2D1B1B),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                      color: isConnected ? Colors.green : Colors.red,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isConnected ? "Controlador Mileto Pareado" : "Controlador Offline (Simulador)",
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            isConnected
-                                ? (isAuthenticated ? "Autenticado & Seguro" : "Aguardando Autenticação...")
-                                : "Modo de Teste Manual Individual Habilitado",
-                            style: TextStyle(color: isConnected ? Colors.white70 : Colors.amber, fontSize: 12),
-                          ),
-                        ],
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Painel de Status
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+              child: Card(
+                color: isConnected ? const Color(0xFF1B2D1B) : const Color(0xFF2D1B1B),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                        color: isConnected ? Colors.green : Colors.red,
+                        size: 24,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          isConnected ? "Controlador Pareado | Autenticado" : "Modo Simulação de Movimento",
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Text(
-              "Motores Cinéticos Conectados (Clique para programar)",
-              style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
+
+            // --- SEÇÃO PRINCIPAL COM O SIMULADOR VISUAL INTEGRADO NA TELA ---
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              itemCount: motoresConectados.length,
-              itemBuilder: (context, index) {
-                final motor = motoresConectados[index];
-                return Card(
-                  color: const Color(0xFF1E1E1E),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.settings_input_composite, color: Colors.amber),
-                    ),
-                    title: Text(motor.nome, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("DMX: ${motor.dmxAddress} | UID: ${motor.uid}", style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Card(
+                color: const Color(0xFF1A1A1A),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        "CONTROLE DIRETO: ${motorAtivo.nome}",
+                        style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          // Simulador Visual do Elevador
+                          Expanded(
+                            flex: 3,
+                            child: Container(
+                              height: 280,
                               decoration: BoxDecoration(
-                                color: motor.isCalibrated ? Colors.green[800] : Colors.red[800],
-                                borderRadius: BorderRadius.circular(4),
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white10),
                               ),
-                              child: Text(
-                                motor.isCalibrated ? "Calibrado" : "Não Calibrado",
-                                style: const TextStyle(color: Colors.white, fontSize: 9),
+                              child: ClipRect(
+                                child: CustomPaint(
+                                  painter: WinchKineticPainter(
+                                    alturaAtualMM: motorAtivo.currentPosMM,
+                                    alturaAlvoMM: motorAtivo.targetPosMM,
+                                    maxMM: maxAlturaCaboMM,
+                                  ),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Text("Posição: ${motor.currentPosMM.toStringAsFixed(1)} mm", style: const TextStyle(color: Colors.amber, fontSize: 11)),
+                          ),
+                          const SizedBox(width: 12),
+                          // Telemetria do Motor Ativo
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildTelemetryTile("Altura Real", "${motorAtivo.currentPosMM.toStringAsFixed(1)} mm", Colors.green),
+                                const SizedBox(height: 12),
+                                _buildTelemetryTile("Altura Alvo", "${motorAtivo.targetPosMM.toStringAsFixed(1)} mm", Colors.amber),
+                                const SizedBox(height: 12),
+                                _buildTelemetryTile("DMX Addr", "${motorAtivo.dmxAddress}", Colors.cyan),
+                                const SizedBox(height: 12),
+                                _buildTelemetryTile("Calibrado", motorAtivo.isCalibrated ? "SIM" : "NÃO", motorAtivo.isCalibrated ? Colors.green : Colors.red),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Slider e botões de comando
+                      Text(
+                        "REGULAR ALTURA DO CABO (0 a 400mm)",
+                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.bold, fontSize: 11),
+                        textAlign: TextAlign.center,
+                      ),
+                      Slider(
+                        value: motorAtivo.targetPosMM,
+                        min: 0.0,
+                        max: maxAlturaCaboMM,
+                        divisions: 400,
+                        activeColor: Colors.amber[700],
+                        inactiveColor: Colors.white12,
+                        onChanged: (val) {
+                          setState(() {
+                            motorAtivo.targetPosMM = val;
+                            motorAtivo.targetPosition = (val * stepsPerMM).toInt();
+                          });
+                          setTargetPosition(motorAtivo, motorAtivo.targetPosition);
+                        },
+                      ),
+                      Wrap(
+                        alignment: WrapAlignment.spaceEvenly,
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          ElevatedButton(
+                            onPressed: () => setTargetPosition(motorAtivo, 0),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
+                            child: const Text("Zerar Cabo", style: TextStyle(fontSize: 10)),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => setTargetPosition(motorAtivo, (200 * stepsPerMM).toInt()),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
+                            child: const Text("Metade", style: TextStyle(fontSize: 10)),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => setTargetPosition(motorAtivo, (400 * stepsPerMM).toInt()),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
+                            child: const Text("Máximo", style: TextStyle(fontSize: 10)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => triggerHoming(motorAtivo),
+                              icon: const Icon(Icons.refresh, size: 14),
+                              label: const Text("Zerar Motor", style: TextStyle(fontSize: 11)),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800]),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => stopStepper(motorAtivo),
+                              icon: const Icon(Icons.warning_amber_rounded, size: 14),
+                              label: const Text("PARAR", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red[900]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text("EQUIPAMENTOS DETECTADOS NO BARRAMENTO", style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+
+            // Lista de Motores / Nós para selecionar
+            SizedBox(
+              height: 120,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                itemCount: motoresConectados.length,
+                itemBuilder: (context, index) {
+                  final motor = motoresConectados[index];
+                  final bool sel = motorSelecionadoIdx == index;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        motorSelecionadoIdx = index;
+                      });
+                    },
+                    child: Card(
+                      color: sel ? Colors.amber.withOpacity(0.15) : const Color(0xFF1E1E1E),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: sel ? Colors.amber : Colors.transparent, width: 1.5),
+                      ),
+                      child: Container(
+                        width: 150,
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              motor.nome,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                            ),
+                            const SizedBox(height: 4),
+                            Text("DMX: ${motor.dmxAddress}", style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                            const SizedBox(height: 4),
+                            Text("${motor.currentPosMM.toStringAsFixed(0)}mm / ${motor.targetPosMM.toStringAsFixed(0)}mm", style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                    trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
-                    onTap: () => abrirProgramacaoIndividual(motor),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -689,7 +615,7 @@ class WinchKineticPainter extends CustomPainter {
     // Linha sólida do cabo de aço na posição em tempo real
     canvas.drawLine(Offset(pontoInicioCaboX, pontoInicioCaboY), Offset(pontoInicioCaboX, pontoFimCaboY_Atual), cablePaint);
 
-    // --- 4. GLOBO DE LUZ COM EFEITO DE GLOW (PONTO DE LUZ KINETIC) ---
+    // --- 4. GLOBO DE LUZ E RETÂNGULO DO ELEVADOR/GUINCHO CINÉTICO COM EFEITO DE GLOW ---
     // Desenha múltiplos círculos sobrepostos com opacidades para dar o brilho (glow) realista conforme sobe/desce
     final Paint glow1 = Paint()..color = Colors.amber.withOpacity(0.15)..style = PaintingStyle.fill;
     final Paint glow2 = Paint()..color = Colors.amber.withOpacity(0.35)..style = PaintingStyle.fill;
@@ -700,6 +626,22 @@ class WinchKineticPainter extends CustomPainter {
     canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 18, glow2);
     canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 12, glow3);
     canvas.drawCircle(Offset(pontoInicioCaboX, pontoFimCaboY_Atual), 6, glowCore);
+
+    // --- DESENHO DE RETÂNGULO SIMULANDO A CABINE DO ELEVADOR / SUPORTE DO GUINCHO ---
+    // Desenha um retângulo de suporte metálico realista do elevador pendurado no cabo de aço
+    final Paint elevatorPaint = Paint()..color = const Color(0xFF3E3E3E)..style = PaintingStyle.fill;
+    final Paint elevatorOutline = Paint()..color = Colors.amber..strokeWidth = 2..style = PaintingStyle.stroke;
+    final Paint interiorGridPaint = Paint()..color = Colors.amber.withOpacity(0.4)..strokeWidth = 1..style = PaintingStyle.stroke;
+
+    // Retângulo do Elevador (Cabine do Guincho): 50px de largura e 35px de altura, centralizado na ponta do cabo
+    final Rect elevatorRect = Rect.fromLTWH(pontoInicioCaboX - 25, pontoFimCaboY_Atual, 50, 35);
+    canvas.drawRect(elevatorRect, elevatorPaint);
+    canvas.drawRect(elevatorRect, elevatorOutline);
+
+    // Linhas internas em cruz simulando treliça metálica (Truss) de estrutura de palco
+    canvas.drawLine(Offset(pontoInicioCaboX - 25, pontoFimCaboY_Atual), Offset(pontoInicioCaboX + 25, pontoFimCaboY_Atual + 35), interiorGridPaint);
+    canvas.drawLine(Offset(pontoInicioCaboX + 25, pontoFimCaboY_Atual), Offset(pontoInicioCaboX - 25, pontoFimCaboY_Atual + 35), interiorGridPaint);
+    canvas.drawLine(Offset(pontoInicioCaboX - 25, pontoFimCaboY_Atual + 17.5), Offset(pontoInicioCaboX + 25, pontoFimCaboY_Atual + 17.5), interiorGridPaint);
 
     // --- 5. RÉGUA DE ESCALA CÊNICA LATERAL (MÉTRICA) ---
     final textPaint = Paint()..color = Colors.white24..strokeWidth = 1;
