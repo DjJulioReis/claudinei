@@ -65,7 +65,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
 class HomeScreen extends StatefulWidget {
   final BleDevice? deviceAlvo;
-  const HomeScreen({super.key, this.deviceAlvo});
+  final int abaInicial;
+  const HomeScreen({super.key, this.deviceAlvo, this.abaInicial = 0});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -116,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _abaAtiva = widget.abaInicial;
     _configurarEscutaDeDadosBLE();
 
     if (widget.deviceAlvo != null) {

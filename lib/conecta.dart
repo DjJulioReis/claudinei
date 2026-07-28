@@ -29,7 +29,7 @@ class _ConectaPageState extends State<ConectaPage> {
   List<BleDevice> dispositivosPareados = [];
   BleDevice? dispositivoSelecionado;
 
-  // Lista dinâmica contendo apenas os aparelhos RDM físicos reais encontrados na hora
+  // Lista dinâmica contendo os aparelhos RDM físicos reais encontrados
   List<Map<String, dynamic>> aparelhosRDMDescobertos = [];
 
   @override
@@ -91,34 +91,12 @@ class _ConectaPageState extends State<ConectaPage> {
                   "nome": partes[4].replaceAll("_", " "),
                   "dmx": int.tryParse(partes[2]) ?? 1,
                   "canais": int.tryParse(partes[3]) ?? 1,
+                  "modelo": modelName,
                 });
               });
-
-              // --- REGRA DE REDIRECIONAMENTO AUTOMÁTICO DE ACORDO COM O PROTOCOLO ---
-              // Se detectar que o equipamento RDM físico é um Elevador / Motor Cinético
-              if (modelName.contains("ELEVADOR") || modelName.contains("KINETIC") || modelName.contains("MOTOR")) {
-                _mostrarFeedback("Elevador Cinético Identificado! Abrindo Painel...");
-                Future.delayed(const Duration(milliseconds: 600), () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => MiletoControlPage(deviceAlvo: _deviceAlvo),
-                    ),
-                  );
-                });
-              } else {
-                // Se for Pista Paris / Outros, encaminha automaticamente para o HomeScreen
-                _mostrarFeedback("Piso de LED Paris Identificado! Abrindo Console...");
-                Future.delayed(const Duration(milliseconds: 600), () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => HomeScreen(deviceAlvo: _deviceAlvo),
-                    ),
-                  );
-                });
-              }
             }
           } else if (linha == "RDM_END") {
-            _mostrarFeedback("Mapeamento concluído!");
+            _mostrarFeedback("Equipamentos encontrados e prontos para seleção!");
           }
         }
       }
@@ -136,6 +114,38 @@ class _ConectaPageState extends State<ConectaPage> {
         });
       }
     };
+  }
+
+  void _abrirPainelDoEquipamento(Map<String, dynamic> aparelho) {
+    String modelName = (aparelho['modelo'] ?? "").toString().toUpperCase();
+
+    // Se o usuário clicar em um Elevador / Motor Cinético
+    if (modelName.contains("ELEVADOR") || modelName.contains("KINETIC") || modelName.contains("MOTOR")) {
+      _mostrarFeedback("Abrindo Painel de Motores Cinéticos para ${aparelho['nome']}...");
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => MiletoControlPage(deviceAlvo: _deviceAlvo),
+        ),
+      );
+    }
+    // Se for Piso Croma RGB
+    else if (modelName.contains("CROMA")) {
+      _mostrarFeedback("Abrindo Painel Piso Croma para ${aparelho['nome']}...");
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(deviceAlvo: _deviceAlvo, abaInicial: 2),
+        ),
+      );
+    }
+    // Se for Pista Paris ou qualquer outro piso
+    else {
+      _mostrarFeedback("Abrindo Painel Pista Paris para ${aparelho['nome']}...");
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(deviceAlvo: _deviceAlvo, abaInicial: 0),
+        ),
+      );
+    }
   }
 
   Future<void> _iniciarDescobertaAutomatica() async {
@@ -255,8 +265,8 @@ class _ConectaPageState extends State<ConectaPage> {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         title: Text(
-          _autenticado ? "CONEXÃO AUTENTICADA" : "VARREDURA RDM AUTOMÁTICA",
-          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber, fontSize: 14),
+          _autenticado ? "CONEXÃO AUTENTICADA" : "VARREDURA DE EQUIPAMENTOS",
+          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.amber, fontSize: 13),
         ),
         actions: [
           if (_autenticado)
@@ -372,24 +382,99 @@ class _ConectaPageState extends State<ConectaPage> {
                 ),
               ],
             ] else ...[
-              const SizedBox(height: 80),
-              const Center(
-                child: Column(
+              if (aparelhosRDMDescobertos.isEmpty) ...[
+                const SizedBox(height: 80),
+                const Center(
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(color: Colors.amber),
+                      SizedBox(height: 20),
+                      Text(
+                        "Varrendo linha DMX física...",
+                        style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        "Buscando equipamentos RDM conectados...",
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                )
+              ] else ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    CircularProgressIndicator(color: Colors.amber),
-                    SizedBox(height: 20),
-                    Text(
-                      "Identificando equipamento físico...",
-                      style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                    const Row(
+                      children: [
+                        Icon(Icons.devices_other, color: Colors.amber, size: 20),
+                        SizedBox(width: 10),
+                        Text(
+                          "EQUIPAMENTOS DETECTADOS",
+                          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      "Lendo assinatura RDM do barramento",
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          aparelhosRDMDescobertos.clear();
+                        });
+                        _enviarComando("VARREDURA_RDM", "1");
+                        _mostrarFeedback("Solicitando nova varredura física...");
+                      },
+                      icon: const Icon(Icons.sync, color: Colors.amber, size: 16),
+                      label: const Text(
+                        "RE-ESCANEAR",
+                        style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
                     ),
                   ],
                 ),
-              )
+                const SizedBox(height: 12),
+
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: aparelhosRDMDescobertos.length,
+                  itemBuilder: (context, index) {
+                    final dev = aparelhosRDMDescobertos[index];
+                    String modelName = dev['modelo'].toString().toUpperCase();
+                    bool ehMotor = modelName.contains("ELEVADOR") || modelName.contains("KINETIC") || modelName.contains("MOTOR");
+                    bool ehCroma = modelName.contains("CROMA");
+
+                    return Card(
+                      color: const Color(0xFF1E1E1E),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: Colors.white10),
+                      ),
+                      child: ListTile(
+                        onTap: () => _abrirPainelDoEquipamento(dev),
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.amber,
+                          foregroundColor: Colors.black,
+                          child: Icon(
+                            ehMotor
+                                ? Icons.settings_input_composite
+                                : ehCroma ? Icons.palette : Icons.lightbulb_outline,
+                          ),
+                        ),
+                        title: Text(
+                          dev['nome'],
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          "ID: ${dev['uid']} | DMX CH: ${dev['dmx']}",
+                          style: const TextStyle(color: Colors.grey, fontSize: 11),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 16),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           ],
         ),
