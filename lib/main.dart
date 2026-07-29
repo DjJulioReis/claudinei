@@ -9,6 +9,8 @@ import 'conecta.dart';
 import 'pista_paris_page.dart';
 import 'pista_croma_page.dart';
 import 'mesa_dmx_page.dart';
+import 'programacao_motores_page.dart';
+import 'mileto_motor_sinetico_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -459,6 +461,34 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _abrirLink("https://mileto.ind.br/fale-conosco/");
+              },
+            ),
+            const Divider(color: Colors.white10),
+            ListTile(
+              leading: const Icon(Icons.grid_view, color: Colors.amber),
+              title: const Text("BLOCOS DE MOTORES", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onTap: () {
+                Navigator.pop(context);
+                // Gera motores mock se estiver offline
+                List<MotorCinetico> motoresDefault = [
+                  MotorCinetico(uid: "M1", nome: "Motor Paris 01", dmxAddress: 1),
+                  MotorCinetico(uid: "M2", nome: "Motor Paris 02", dmxAddress: 5),
+                  MotorCinetico(uid: "M3", nome: "Motor Paris 03", dmxAddress: 9),
+                  MotorCinetico(uid: "M4", nome: "Motor Paris 04", dmxAddress: 13),
+                  MotorCinetico(uid: "M5", nome: "Motor Paris 05", dmxAddress: 17),
+                  MotorCinetico(uid: "M6", nome: "Motor Paris 06", dmxAddress: 21),
+                  MotorCinetico(uid: "M7", nome: "Motor Paris 07", dmxAddress: 25),
+                  MotorCinetico(uid: "M8", nome: "Motor Paris 08", dmxAddress: 29),
+                ];
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ProgramacaoMotoresPage(
+                      deviceAlvo: _deviceAlvo,
+                      motoresConectados: motoresDefault,
+                      enviarComando: enviarComando,
+                    ),
+                  ),
+                );
               },
             ),
             const Divider(color: Colors.white10),

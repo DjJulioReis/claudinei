@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:universal_ble/universal_ble.dart';
 import 'conecta.dart';
+import 'programacao_motores_page.dart';
 
 // Classe modelo para representar cada Motor Cinético de forma individual
 class MotorCinetico {
@@ -312,6 +313,21 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
           },
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.grid_view, color: Colors.amber),
+            tooltip: "Programar em Blocos de Cor",
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProgramacaoMotoresPage(
+                    deviceAlvo: _deviceAlvo,
+                    motoresConectados: motoresConectados,
+                    enviarComando: (cmd, val) => sendRawCommand("$cmd:$val"),
+                  ),
+                ),
+              );
+            },
+          ),
           if (isConnected)
             IconButton(
               icon: const Icon(Icons.save, color: Colors.amber),
