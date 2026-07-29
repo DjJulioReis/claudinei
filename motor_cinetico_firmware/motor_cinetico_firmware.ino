@@ -14,22 +14,54 @@ Adafruit_SSD1306 display(LARGURA_TELA, ALTURA_TELA, &Wire, OLED_RESET);
 // --- PINOS EXCLUSIVOS DO MOTOR/GUINCHO CINÉTICO ESP32-C3 ---
 #define STEP_PIN 0      // Sinal de Passo do Driver do Motor
 #define DIR_PIN  1      // Sinal de Direção do Driver do Motor
-#define EN_PIN   2      // Enable do Driver do Motor
-#define SENSOR_HOME 4   // Sensor Óptico/Fim de curso para Calibração (Zero)
+#define EN_PIN   2      // Enable do Driver do Motor (LOW = Habilitado, HIGH = Desabilitado)
+#define SENSOR_HOME 3   // Sensor Óptico/Fim de curso para Calibração (Reorganizado de 4 para 3 para evitar conflito)
+
+// --- PINOS DO ENCODER ÓPTICO EM QUADRATURA ---
+#define ENCODER_A 4     // Canal A do Encoder Óptico (Coletor Aberto)
+#define ENCODER_B 5     // Canal B do Encoder Óptico (Coletor Aberto)
 
 #define ENC_CLK 6
 #define ENC_DT   7
 #define ENC_SW  10
 
+// --- PARÂMETROS E CONSTANTES DO ENCODER ---
+#define ENCODER_PULSES_PER_REV 25  // 25 pulsos por volta (teste) ou 50 para o definitivo
+#define QUADRATURE_FACTOR 4        // Leitura x4 em quadratura
+const double CIRCUNFERENCIA_TAMBOR_MM = 534.0; // Circunferência aproximada do tambor (diâmetro de 17cm)
+const double mmPorPulso = CIRCUNFERENCIA_TAMBOR_MM / (ENCODER_PULSES_PER_REV * QUADRATURE_FACTOR);
+
+#define MAX_ENCODER_ERROR 50       // Erro limite de dessincronização de 50mm
+
 // --- VARIÁVEIS DE PROGRAMAÇÃO E TELEMETRIA DO MOTOR ---
 bool isCalibrated = false;
 bool isHoming = false;
+bool encoderError = false; // Flag de erro de dessincronização
+
 int currentPosition = 0;   // Em passos do motor
 int targetPosition = 0;    // Em passos do motor
-double currentPosMM = 0.0; // Posição em mm (0 a 400mm)
-double targetPosMM = 0.0;  // Posição em mm (0 a 400mm)
+double currentPosMM = 0.0; // Posição calculada por passos (0 a 400mm)
+double targetPosMM = 0.0;  // Posição desejada em mm (0 a 400mm)
 int stepsDeviation = 0;
 int dmxAddress = 1;
+
+// --- LEITURA DO ENCODER EM QUADRATURA (INTERRUPÇÃO) ---
+volatile long encoderCount = 0;
+volatile int lastEncoded = 0;
+double encoderPosMM = 0.0; // Posição real medida pelo encoder em mm
+
+void IRAM_ATTR tratarEncoder() {
+  int MSB = digitalRead(ENCODER_A);
+  int LSB = digitalRead(ENCODER_B);
+
+  int encoded = (MSB << 1) | LSB;
+  int sum = (lastEncoded << 2) | encoded;
+
+  if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderCount++;
+  if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderCount--;
+
+  lastEncoded = encoded;
+}
 
 static const double stepsPerMM = 40.0; // 16000 passos = 400mm de curso útil
 static const double maxAlturaCaboMM = 400.0;
@@ -104,16 +136,18 @@ void enviarEstatisticasBT() {
   static unsigned long last = 0;
   if (dispositivoConectado && autenticado && millis() - last >= 100) {
     last = millis();
-    // STATS:isCalibrated,isHoming,currentPosition,targetPosition,0,0,currentPosMM,targetPosMM,0,stepsDeviation
-    char buf[100];
-    sprintf(buf, "STATS:%d,%d,%d,%d,0,0,%.1f,%.1f,0,%d\n",
+    // Protocolo estendido mantendo compatibilidade com o final:
+    // STATS:isCalibrated,isHoming,currentPosition,targetPosition,0,0,currentPosMM,targetPosMM,0,stepsDeviation,encoderCount
+    char buf[120];
+    sprintf(buf, "STATS:%d,%d,%d,%d,0,0,%.1f,%.1f,0,%d,%ld\n",
             isCalibrated ? 1 : 0,
             isHoming ? 1 : 0,
             currentPosition,
             targetPosition,
             currentPosMM,
             targetPosMM,
-            stepsDeviation);
+            stepsDeviation,
+            encoderCount);
     pTxCharacteristic->setValue(buf);
     pTxCharacteristic->notify();
   }
@@ -121,6 +155,8 @@ void enviarEstatisticasBT() {
 
 // Controle físico de movimentação dos pulsos do Motor de Passo (Kinetic)
 void gerarPulsoPasso(bool direcaoSubida) {
+  if (encoderError) return; // Trava se houver erro de dessincronização
+
   digitalWrite(DIR_PIN, direcaoSubida ? HIGH : LOW);
   digitalWrite(STEP_PIN, HIGH);
   delayMicroseconds(400); // Freqüência do pulso
@@ -156,12 +192,16 @@ void processarBluetooth() {
   if (!autenticado) return;
 
   if (cmd == "SET_POS") {
-    targetPosition = iv;
-    targetPosMM = (double)targetPosition / stepsPerMM;
+    if (!encoderError) {
+      targetPosition = iv;
+      targetPosMM = (double)targetPosition / stepsPerMM;
+    }
   }
   else if (cmd == "CALIBRAR") {
     isHoming = true;
     isCalibrated = false;
+    encoderError = false;
+    digitalWrite(EN_PIN, LOW); // Reabilita se estava desabilitado por erro
   }
   else if (cmd == "PARAR") {
     targetPosition = currentPosition;
@@ -204,6 +244,9 @@ void lidarComEncoder() {
   if (currentSwState != lastSwState && currentSwState == LOW) {
     if (millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis();
+      if (faseAtual == FMX_DMX_DUMMY) { // Dummy check
+         // No action
+      }
       if (faseAtual == FASE_DMX) {
         faseAtual = FASE_ALTURA;
       } else {
@@ -217,7 +260,12 @@ void lidarComEncoder() {
   lastSwState = currentSwState;
 }
 
+// Para manter compatibilidade com compilação
+#define FMX_DMX_DUMMY 99
+
 void gerenciarMovimentoMotor() {
+  if (encoderError) return;
+
   if (isHoming) {
     // Se estiver fazendo homing, desce o cabo até tocar o sensor home (LOW se acionado)
     if (digitalRead(SENSOR_HOME) == HIGH) {
@@ -227,6 +275,7 @@ void gerenciarMovimentoMotor() {
       currentPosMM = 0.0;
       targetPosition = 0;
       targetPosMM = 0.0;
+      encoderCount = 0; // Zera o contador real do encoder óptico na calibração!
       isHoming = false;
       isCalibrated = true;
     }
@@ -237,6 +286,30 @@ void gerenciarMovimentoMotor() {
     } else if (currentPosition > targetPosition) {
       gerarPulsoPasso(false); // Desce
     }
+  }
+}
+
+// Rotina periódica para checar dessincronização física entre motor e encoder
+void monitorarSegurancaEncoder() {
+  if (isHoming || !isCalibrated || encoderError) return;
+
+  encoderPosMM = (double)encoderCount * mmPorPulso;
+
+  // Calcula a diferença absoluta de posição
+  double diferenca = abs(currentPosMM - encoderPosMM);
+  if (diferenca > MAX_ENCODER_ERROR) {
+    // CONDUTA DE EMERGÊNCIA: Dessincronização detectada!
+    encoderError = true;
+    targetPosition = currentPosition;
+    targetPosMM = currentPosMM;
+    digitalWrite(EN_PIN, HIGH); // Desabilita o driver do motor de passo fisicamente
+
+    // Notifica o aplicativo imediatamente via BLE
+    if (dispositivoConectado && autenticado) {
+      pTxCharacteristic->setValue("ERROR:ENCODER_DESYNC\n");
+      pTxCharacteristic->notify();
+    }
+    Serial.println("⚠️ ALERTA: ERRO DE DESSINCRONIZACAO MECANICA!");
   }
 }
 
@@ -253,6 +326,15 @@ void atualizarOLED() {
     display.setCursor(0, 16);
     if (faseAtual == FASE_DMX) display.print("> "); else display.print("  ");
     display.print("DMX CH: "); display.print(dmxAddress);
+
+    // Adiciona linha de diagnóstico do encoder óptico no display OLED
+    if (encoderError) {
+      display.setCursor(72, 16);
+      display.print("ERR ENC!");
+    } else {
+      display.setCursor(72, 16);
+      display.print("E:"); display.print(encoderCount);
+    }
 
     display.setCursor(0, 32);
     display.print("ALTURA REAL: "); display.print(currentPosMM, 1); display.print(" mm");
@@ -273,7 +355,15 @@ void setup() {
   pinMode(EN_PIN, OUTPUT);
   pinMode(SENSOR_HOME, INPUT_PULLUP);
 
-  digitalWrite(EN_PIN, LOW); // Habilita o driver de passo
+  // Inicialização do Encoder com resistores internos de PULLUP
+  pinMode(ENCODER_A, INPUT_PULLUP);
+  pinMode(ENCODER_B, INPUT_PULLUP);
+
+  // Anexa interrupções nas mudanças de estado dos canais do encoder (Quad x4)
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A), tratarEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_B), tratarEncoder, CHANGE);
+
+  digitalWrite(EN_PIN, LOW); // Habilita o driver de passo por padrão
 
   Wire.begin(8, 9);
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { Serial.println("OLED ERR"); }
@@ -322,6 +412,7 @@ void loop() {
 
   lidarComEncoder();
   gerenciarMovimentoMotor();
+  monitorarSegurancaEncoder();
   atualizarOLED();
   enviarEstatisticasBT();
 
