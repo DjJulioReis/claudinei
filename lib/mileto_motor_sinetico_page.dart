@@ -297,6 +297,15 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
       ));
     }
 
+    // Se temos mais de um motor e um deles é o dummy de segurança, removemos o dummy
+    // para exibir única e exclusivamente o motor físico real detectado no barramento!
+    if (motoresConectados.length > 1 && motoresConectados.any((m) => m.uid == "4D49:00000001")) {
+      motoresConectados.removeWhere((m) => m.uid == "4D49:00000001");
+      if (motorSelecionadoIdx >= motoresConectados.length) {
+        motorSelecionadoIdx = 0;
+      }
+    }
+
     final motorAtivo = motoresConectados[motorSelecionadoIdx < motoresConectados.length ? motorSelecionadoIdx : 0];
 
     return Scaffold(
