@@ -244,9 +244,6 @@ void lidarComEncoder() {
   if (currentSwState != lastSwState && currentSwState == LOW) {
     if (millis() - ultimoDebounce >= 250) {
       ultimoDebounce = millis();
-      if (faseAtual == FMX_DMX_DUMMY) { // Dummy check
-         // No action
-      }
       if (faseAtual == FASE_DMX) {
         faseAtual = FASE_ALTURA;
       } else {
@@ -259,9 +256,6 @@ void lidarComEncoder() {
   }
   lastSwState = currentSwState;
 }
-
-// Para manter compatibilidade com compilação
-#define FMX_DMX_DUMMY 99
 
 void gerenciarMovimentoMotor() {
   if (encoderError) return;
