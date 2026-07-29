@@ -194,7 +194,7 @@ void lidarComEncoder() {
       } else {
         targetPosMM = max(0.0, targetPosMM - 5.0);
       }
-      targetPosition = (targetPosMM * stepsPerMM).toInt();
+      targetPosition = (int)(targetPosMM * stepsPerMM);
     }
   }
   lastClkState = currentClkState;
