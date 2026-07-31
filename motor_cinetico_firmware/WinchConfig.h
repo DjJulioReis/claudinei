@@ -1,0 +1,49 @@
+#ifndef WINCH_CONFIG_H
+#define WINCH_CONFIG_H
+
+#include <Arduino.h>
+
+// --- PINOUT DO ESP32-C3 SUPER MINI ---
+#define STEP_PIN      0  // Sinal de Passo do Driver (TB6600)
+#define DIR_PIN       1  // Sinal de Direção do Driver (TB6600)
+#define EN_PIN        2  // Enable do Driver (LOW = Habilitado, HIGH = Desabilitado)
+#define SENSOR_HOME   3  // Sensor óptico/fim de curso de calibração
+
+#define ENCODER_A     4  // Canal A do Encoder de quadratura (PULLUP)
+#define ENCODER_B     5  // Canal B do Encoder de quadratura (PULLUP)
+
+#define ENC_CLK       6  // CLK do Rotary Encoder
+#define ENC_DT        7  // DT do Rotary Encoder
+#define ENC_SW       10  // SW do Rotary Encoder
+
+// --- PARÂMETROS MECÂNICOS DO SISTEMA ---
+#define MOTOR_STEPS_PER_REV 200.0
+#define DRIVER_MICROSTEP    8.0  // Configuração 1/8 no TB6600 (1600 passos/rev)
+#define REDUCTION_RATIO     6.0  // Redução mecânica de 6:1
+
+#define ENCODER_PULSES      25.0 // 25 ou 50 pulsos por volta da polia pequena
+#define QUADRATURE_FACTOR   4.0  // Leitura x4
+
+#define DRUM_DIAMETER       170.0 // mm
+#define PULLEY_DIAMETER     80.0  // mm
+#define PI_CONST            3.141592653589793
+
+// --- CÁLCULO AUTOMÁTICO DE RELAÇÕES LINEARES ---
+// Circunferência do tambor: pi * diâmetro = ~534.07 mm
+const double DRUM_CIRCUMFERENCE = DRUM_DIAMETER * PI_CONST;
+
+// Passos teóricos por milímetro: (Passos do Motor * Redução) / Circunferência do tambor
+// (1600 * 6) / 534.07 = ~17.975 passos por mm
+const double STEPS_PER_MM = (MOTOR_STEPS_PER_REV * DRIVER_MICROSTEP * REDUCTION_RATIO) / DRUM_CIRCUMFERENCE;
+
+// Deslocamento por volta da polia: circunferência da polia / redução = ~41.8879 mm/volta
+const double MM_PER_PULLEY_REV = (PULLEY_DIAMETER * PI_CONST) / REDUCTION_RATIO;
+
+// MM por contagem do encoder: deslocamento por volta da polia / contagens por volta
+const double MM_PER_ENCODER_COUNT = MM_PER_PULLEY_REV / (ENCODER_PULSES * QUADRATURE_FACTOR);
+
+// --- PARÂMETROS DE SEGURANÇA E TOLERÂNCIA ---
+#define MAX_ENCODER_ERROR_MM 50.0  // 50 mm de tolerância para erro de perda de passos
+#define POSITION_TOLERANCE_MM 1.5   // Tolerância de 1.5mm para considerar o alvo atingido em malha fechada
+
+#endif // WINCH_CONFIG_H
