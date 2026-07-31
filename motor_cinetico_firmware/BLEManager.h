@@ -7,6 +7,17 @@
 #include "MotorController.h"
 #include "PreferencesManager.h"
 
+// --- SERVER CALLBACKS DECLARATION ---
+class MyServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pS, NimBLEConnInfo& connInfo) override;
+    void onDisconnect(NimBLEServer* pS, NimBLEConnInfo& connInfo, int reason) override;
+};
+
+// --- CHARACTERISTIC CALLBACKS DECLARATION ---
+class MyCharCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *pC, NimBLEConnInfo& connInfo) override;
+};
+
 class BLEManager {
 private:
   NimBLEServer* pServer = NULL;
@@ -25,37 +36,13 @@ public:
     pServer = NimBLEDevice::createServer();
 
     // Configura os callbacks do servidor
-    pServer->setCallbacks(new class MyServerCallbacks : public NimBLEServerCallbacks {
-      void onConnect(NimBLEServer* pS, NimBLEConnInfo& connInfo) override {
-        extern BLEManager ble;
-        ble.dispositivoConectado = true;
-        ble.autenticado = false;
-        randomSeed(micros());
-        ble.desafioHandshake = random(1000, 9999);
-        pS->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 400);
-      }
-      void onDisconnect(NimBLEServer* pS, NimBLEConnInfo& connInfo, int reason) override {
-        extern BLEManager ble;
-        ble.dispositivoConectado = false;
-        ble.autenticado = false;
-        NimBLEDevice::startAdvertising();
-      }
-    });
+    pServer->setCallbacks(new MyServerCallbacks());
 
     NimBLEService *pService = pServer->createService(SERVICE_UUID);
     pTxCharacteristic = pService->createCharacteristic(TX_UUID, NIMBLE_PROPERTY::NOTIFY);
 
     NimBLECharacteristic *pRxCharacteristic = pService->createCharacteristic(RX_UUID, NIMBLE_PROPERTY::WRITE);
-    pRxCharacteristic->setCallbacks(new class MyCharCallbacks : public NimBLECharacteristicCallbacks {
-      void onWrite(NimBLECharacteristic *pC, NimBLEConnInfo& connInfo) override {
-        extern BLEManager ble;
-        String rxValue = pC->getValue();
-        if (rxValue.length() > 0) {
-          ble.comandoPendente = rxValue;
-          ble.novoComandoBle = true;
-        }
-      }
-    });
+    pRxCharacteristic->setCallbacks(new MyCharCallbacks());
 
     pService->start();
 
@@ -144,8 +131,8 @@ public:
 
     if (cmd == "SET_POS") {
       if (!encoder.encoderError) {
-        // O valor enviado pelo aplicativo é em milímetros escalados por stepsPerMM
-        double alvoMM = (double)iv / stepsPerMM;
+        // O valor enviado pelo aplicativo é em milímetros escalados por STEPS_PER_MM
+        double alvoMM = (double)iv / STEPS_PER_MM;
         motorController.targetPosMM = constclampedMM(alvoMM);
       }
     }
@@ -170,7 +157,7 @@ public:
 
   double constclampedMM(double val) {
     if (val < 0.0) return 0.0;
-    if (val > maxAlturaCaboMM) return maxAlturaCaboMM;
+    if (val > MAX_ALTURA_CABO_MM) return MAX_ALTURA_CABO_MM;
     return val;
   }
 
@@ -201,5 +188,28 @@ public:
 };
 
 extern BLEManager ble;
+
+// --- INLINE DEFINITIONS FOR STANDALONE CALLBACKS ---
+inline void MyServerCallbacks::onConnect(NimBLEServer* pS, NimBLEConnInfo& connInfo) {
+    ble.dispositivoConectado = true;
+    ble.autenticado = false;
+    randomSeed(micros());
+    ble.desafioHandshake = random(1000, 9999);
+    pS->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 400);
+}
+
+inline void MyServerCallbacks::onDisconnect(NimBLEServer* pS, NimBLEConnInfo& connInfo, int reason) {
+    ble.dispositivoConectado = false;
+    ble.autenticado = false;
+    NimBLEDevice::startAdvertising();
+}
+
+inline void MyCharCallbacks::onWrite(NimBLECharacteristic *pC, NimBLEConnInfo& connInfo) {
+    String rxValue = pC->getValue();
+    if (rxValue.length() > 0) {
+      ble.comandoPendente = rxValue;
+      ble.novoComandoBle = true;
+    }
+}
 
 #endif // BLE_MANAGER_H

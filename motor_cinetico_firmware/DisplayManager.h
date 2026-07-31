@@ -8,6 +8,7 @@
 #include "EncoderManager.h"
 #include "MotorController.h"
 #include "PreferencesManager.h"
+#include "MILETO_LOGO_1.h"
 
 extern Adafruit_SSD1306 display;
 
@@ -32,13 +33,11 @@ public:
       Serial.println("OLED ERR");
     }
 
+    // --- EXIBE A LOGO OFICIAL DA MILETO NO CORPO DO BOOT ---
     display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    display.setCursor(15, 20);
-    display.print("MOTOR CINETICO");
+    display.drawBitmap(0, 0, MILETO_LOGO_1, LARGURA_TELA, ALTURA_TELA, WHITE);
     display.display();
-    delay(1500);
+    delay(3000); // 3 segundos com a logo
   }
 
   void lidarComEncoderKnob() {
@@ -53,7 +52,7 @@ public:
       } else {
         double alvo = motorController.targetPosMM;
         if (subindo) {
-          alvo = min(maxAlturaCaboMM, alvo + 5.0);
+          alvo = min(MAX_ALTURA_CABO_MM, alvo + 5.0);
         } else {
           alvo = max(0.0, alvo - 5.0);
         }

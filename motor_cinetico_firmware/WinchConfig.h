@@ -2,6 +2,17 @@
 #define WINCH_CONFIG_H
 
 #include <Arduino.h>
+#include "esp_mac.h"
+
+// --- CONFIGURAÇÕES DE TELA OLED ---
+#define LARGURA_TELA 128
+#define ALTURA_TELA  64
+#define OLED_RESET   -1
+
+// --- UUIDs DO PROTOCOLO BLE NORDIC UART ---
+#define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define TX_UUID      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+#define RX_UUID      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 
 // --- PINOUT DO ESP32-C3 SUPER MINI ---
 #define STEP_PIN      0  // Sinal de Passo do Driver (TB6600)
@@ -45,5 +56,6 @@ const double MM_PER_ENCODER_COUNT = MM_PER_PULLEY_REV / (ENCODER_PULSES * QUADRA
 // --- PARÂMETROS DE SEGURANÇA E TOLERÂNCIA ---
 #define MAX_ENCODER_ERROR_MM 50.0  // 50 mm de tolerância para erro de perda de passos
 #define POSITION_TOLERANCE_MM 1.5   // Tolerância de 1.5mm para considerar o alvo atingido em malha fechada
+#define MAX_ALTURA_CABO_MM    400.0 // mm
 
 #endif // WINCH_CONFIG_H
