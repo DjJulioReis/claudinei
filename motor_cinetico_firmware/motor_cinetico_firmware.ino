@@ -34,13 +34,18 @@ void setup() {
   // Inicializa o Controlador de Movimento e o driver de passo
   motorController.begin();
 
-  // Inicializa o display OLED e o encoder de menu
+  // --- ACIONAMENTO DO RE-RESET AUTOMÁTICO NO BOOT (HOMING INICIAL) ---
+  // Força o guincho a realizar a rotina de busca de zero de forma automática ao iniciar!
+  motorController.isHoming = true;
+  motorController.isCalibrated = false;
+
+  // Inicializa o display OLED e o encoder de menu (exibe a logo por 3 segundos)
   displayManager.begin();
 
   // Inicializa a pilha de Bluetooth Low Energy (NimBLE)
   ble.begin();
 
-  Serial.println("🚀 MILETO KINETIC BOOT COMPLETED SUCCESSFULLY!");
+  Serial.println("🚀 MILETO KINETIC BOOT COMPLETED: WAITING FOR COMPULSORY SENSOR HOME RESET...");
 }
 
 void loop() {
