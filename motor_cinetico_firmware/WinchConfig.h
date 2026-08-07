@@ -17,7 +17,6 @@
 // --- PINOUT DO ESP32-C3 SUPER MINI ---
 #define STEP_PIN      0  // Sinal de Passo do Driver (TB6600)
 #define DIR_PIN       1  // Sinal de Direção do Driver (TB6600)
-#define EN_PIN        2  // Enable do Driver (Sempre travado/segurando torque = LOW por padrão)
 #define SENSOR_HOME   3  // Sensor óptico/fim de curso de calibração
 
 #define ENCODER_A     4  // Canal A do Encoder de quadratura (PULLUP)

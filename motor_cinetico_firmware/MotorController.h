@@ -21,10 +21,8 @@ public:
   void begin() {
     pinMode(STEP_PIN, OUTPUT);
     pinMode(DIR_PIN, OUTPUT);
-    pinMode(EN_PIN, OUTPUT);
     pinMode(SENSOR_HOME, INPUT_PULLUP);
 
-    digitalWrite(EN_PIN, LOW); // Habilita o driver por padrão (Sempre travado e energizado para segurar torque)
     digitalWrite(STEP_PIN, LOW);
     digitalWrite(DIR_PIN, LOW);
 
@@ -34,16 +32,6 @@ public:
   void stop() {
     targetPosMM = encoder.getPositionMM();
     currentSpeed = 0.0;
-  }
-
-  void disable() {
-    // Para manter o motor sempre travado sob comando do usuário, o pino EN nunca é desativado!
-    // Ele permanece em nível lógico LOW para manter o torque ativo.
-    digitalWrite(EN_PIN, LOW);
-  }
-
-  void enable() {
-    digitalWrite(EN_PIN, LOW);
   }
 
   void runClosedLoop() {
@@ -168,7 +156,7 @@ public:
     if (error > MAX_ENCODER_ERROR_MM) {
       encoder.encoderError = true;
       stop();
-      // Não desabilitamos EN_PIN! O motor continua sob retenção magnética máxima (LOW)
+      // O motor continua sob retenção magnética do driver físico (que permanece energizado)
       // para segurar e travar o guincho/elevador no ar e não deixá-lo despencar!
       Serial.print("🚨 DESENCONTRO DETECTADO! Erro de ");
       Serial.print(error);

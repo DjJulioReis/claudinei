@@ -140,7 +140,6 @@ public:
       motorController.isHoming = true;
       motorController.isCalibrated = false;
       encoder.encoderError = false;
-      motorController.enable(); // Reabilita driver se desabilitado por erro anterior
     }
     else if (cmd == "PARAR") {
       motorController.stop();
