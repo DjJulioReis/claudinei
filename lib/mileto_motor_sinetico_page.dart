@@ -56,9 +56,9 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
   List<MotorCinetico> motoresConectados = [];
   int motorSelecionadoIdx = 0; // Índice do motor ativo/selecionado em controle
 
-  // Constantes de cálculo baseadas em cabo de 400mm útil máximo
-  static const double maxAlturaCaboMM = 400.0;
-  static const double stepsPerMM = 40.0; // Exemplo: 16000 passos para 400mm de curso
+  // Constantes de cálculo baseadas em cabo de 3000mm (3 metros) útil máximo
+  static const double maxAlturaCaboMM = 3000.0;
+  static const double stepsPerMM = 18.0; // Configurado para 18 passos por milímetro do sistema real
 
   @override
   void initState() {

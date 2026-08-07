@@ -17,7 +17,7 @@
 // --- PINOUT DO ESP32-C3 SUPER MINI ---
 #define STEP_PIN      0  // Sinal de Passo do Driver (TB6600)
 #define DIR_PIN       1  // Sinal de Direção do Driver (TB6600)
-#define EN_PIN        2  // Enable do Driver (LOW = Habilitado, HIGH = Desabilitado)
+#define EN_PIN        2  // Enable do Driver (Sempre travado/segurando torque = LOW por padrão)
 #define SENSOR_HOME   3  // Sensor óptico/fim de curso de calibração
 
 #define ENCODER_A     4  // Canal A do Encoder de quadratura (PULLUP)
@@ -56,6 +56,6 @@ const double MM_PER_ENCODER_COUNT = MM_PER_PULLEY_REV / (ENCODER_PULSES * QUADRA
 // --- PARÂMETROS DE SEGURANÇA E TOLERÂNCIA ---
 #define MAX_ENCODER_ERROR_MM 50.0  // 50 mm de tolerância para erro de perda de passos
 #define POSITION_TOLERANCE_MM 1.5   // Tolerância de 1.5mm para considerar o alvo atingido em malha fechada
-#define MAX_ALTURA_CABO_MM    400.0 // mm
+#define MAX_ALTURA_CABO_MM    3000.0 // Configurado para 3000 mm (3 metros) de curso útil máximo!
 
 #endif // WINCH_CONFIG_H

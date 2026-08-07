@@ -37,12 +37,12 @@ class _ProgramacaoMotoresPageState extends State<ProgramacaoMotoresPage> {
   // Mapa relacionando o UID do Motor à cor do bloco atribuída (null = sem bloco/individual)
   Map<String, Color?> blocosMotores = {};
 
-  // Alturas e Velocidades programadas para cada bloco de cor (0-3)
-  List<double> alturasBlocos = [200.0, 200.0, 200.0, 200.0];
+  // Alturas e Velocidades programadas para cada bloco de cor (0-3) - Max 3000 mm (3 metros)
+  List<double> alturasBlocos = [1500.0, 1500.0, 1500.0, 1500.0];
   List<double> velocidadesBlocos = [50.0, 50.0, 50.0, 50.0];
 
   // Altura e velocidade individual caso queira controlar um motor avulso
-  double alturaIndividual = 200.0;
+  double alturaIndividual = 1500.0;
   double velocidadeIndividual = 50.0;
   String? motorSelecionadoIndividualUid;
 
@@ -64,7 +64,7 @@ class _ProgramacaoMotoresPageState extends State<ProgramacaoMotoresPage> {
       if (blocosMotores[motor.uid] == corBloco) {
         setState(() {
           motor.targetPosMM = altura;
-          motor.targetPosition = (altura * 40.0).toInt();
+          motor.targetPosition = (altura * 18.0).toInt(); // 18 passos por mm no sistema real
         });
         // Protocolo de envio de posição para o motor RDM correspondente
         widget.enviarComando("SET_POS", "${motor.targetPosition}");
@@ -75,7 +75,7 @@ class _ProgramacaoMotoresPageState extends State<ProgramacaoMotoresPage> {
   void _dispararComandoIndividual(MotorCinetico motor, double altura, double vel) {
     setState(() {
       motor.targetPosMM = altura;
-      motor.targetPosition = (altura * 40.0).toInt();
+      motor.targetPosition = (altura * 18.0).toInt(); // 18 passos por mm no sistema real
     });
     widget.enviarComando("SET_POS", "${motor.targetPosition}");
   }
@@ -269,15 +269,15 @@ class _ProgramacaoMotoresPageState extends State<ProgramacaoMotoresPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("ALTURA DO CABO (0 a 400mm)", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        const Text("ALTURA DO CABO (0 a 3000mm)", style: TextStyle(fontSize: 11, color: Colors.grey)),
                         Text("${alturasBlocos[blocoAtivoIdx].round()} mm", style: TextStyle(color: corAtiva, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     Slider(
                       value: alturasBlocos[blocoAtivoIdx],
                       min: 0.0,
-                      max: 400.0,
-                      divisions: 400,
+                      max: 3000.0,
+                      divisions: 300,
                       activeColor: corAtiva,
                       onChanged: (val) {
                         setState(() {
@@ -358,15 +358,15 @@ class _ProgramacaoMotoresPageState extends State<ProgramacaoMotoresPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("ALTURA INDIVIDUAL", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        const Text("ALTURA INDIVIDUAL (0 a 3000mm)", style: TextStyle(fontSize: 11, color: Colors.grey)),
                         Text("${alturaIndividual.round()} mm", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     Slider(
                       value: alturaIndividual,
                       min: 0.0,
-                      max: 400.0,
-                      divisions: 400,
+                      max: 3000.0,
+                      divisions: 300,
                       activeColor: Colors.amber,
                       onChanged: (val) {
                         setState(() {
