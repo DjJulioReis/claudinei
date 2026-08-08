@@ -79,20 +79,20 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
         uid: "4D49:001F2A3B",
         nome: "Motor Cinético Paris 01",
         dmxAddress: 1,
-        currentPosition: 4000,
-        targetPosition: 4000,
-        currentPosMM: 100.0,
-        targetPosMM: 100.0,
+        currentPosition: 18000,
+        targetPosition: 18000,
+        currentPosMM: 1000.0,
+        targetPosMM: 1000.0,
         isCalibrated: true,
       ),
       MotorCinetico(
         uid: "4D49:001F2A3C",
         nome: "Motor Cinético Paris 02",
         dmxAddress: 8,
-        currentPosition: 12000,
-        targetPosition: 12000,
-        currentPosMM: 300.0,
-        targetPosMM: 300.0,
+        currentPosition: 36000,
+        targetPosition: 36000,
+        currentPosMM: 2000.0,
+        targetPosMM: 2000.0,
         isCalibrated: true,
       ),
       MotorCinetico(
@@ -100,19 +100,19 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
         nome: "Motor Cinético Paris 03",
         dmxAddress: 15,
         currentPosition: 0,
-        targetPosition: 8000,
+        targetPosition: 27000,
         currentPosMM: 0.0,
-        targetPosMM: 200.0,
+        targetPosMM: 1500.0,
         isCalibrated: false,
       ),
       MotorCinetico(
         uid: "4D49:001F2A3E",
         nome: "Motor Cinético Paris 04",
         dmxAddress: 22,
-        currentPosition: 16000,
-        targetPosition: 16000,
-        currentPosMM: 400.0,
-        targetPosMM: 400.0,
+        currentPosition: 54000,
+        targetPosition: 54000,
+        currentPosMM: 3000.0,
+        targetPosMM: 3000.0,
         isCalibrated: true,
       ),
     ];
@@ -439,7 +439,7 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
                       const SizedBox(height: 16),
                       // Slider e botões de comando
                       Text(
-                        "REGULAR ALTURA DO CABO (0 a 400mm)",
+                        "REGULAR ALTURA DO CABO (0 a 3000mm - 3 Metros)",
                         style: TextStyle(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.bold, fontSize: 11),
                         textAlign: TextAlign.center,
                       ),
@@ -447,7 +447,7 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
                         value: motorAtivo.targetPosMM,
                         min: 0.0,
                         max: maxAlturaCaboMM,
-                        divisions: 400,
+                        divisions: 300,
                         activeColor: Colors.amber[700],
                         inactiveColor: Colors.white12,
                         onChanged: (val) {
@@ -466,17 +466,17 @@ class _MiletoMotorSineticoPageState extends State<MiletoMotorSineticoPage> {
                           ElevatedButton(
                             onPressed: () => setTargetPosition(motorAtivo, 0),
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
-                            child: const Text("Zerar Cabo", style: TextStyle(fontSize: 10)),
+                            child: const Text("Zerar Cabo (0m)", style: TextStyle(fontSize: 10)),
                           ),
                           ElevatedButton(
-                            onPressed: () => setTargetPosition(motorAtivo, (200 * stepsPerMM).toInt()),
+                            onPressed: () => setTargetPosition(motorAtivo, (1500 * stepsPerMM).toInt()),
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
-                            child: const Text("Metade", style: TextStyle(fontSize: 10)),
+                            child: const Text("Metade (1.5m)", style: TextStyle(fontSize: 10)),
                           ),
                           ElevatedButton(
-                            onPressed: () => setTargetPosition(motorAtivo, (400 * stepsPerMM).toInt()),
+                            onPressed: () => setTargetPosition(motorAtivo, (3000 * stepsPerMM).toInt()),
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[850]),
-                            child: const Text("Máximo", style: TextStyle(fontSize: 10)),
+                            child: const Text("Máximo (3.0m)", style: TextStyle(fontSize: 10)),
                           ),
                         ],
                       ),
@@ -679,7 +679,7 @@ class WinchKineticPainter extends CustomPainter {
       // Riscos de marcação lateral
       canvas.drawLine(Offset(pontoInicioCaboX - 45, y), Offset(pontoInicioCaboX - 35, y), textPaint);
 
-      // Marcação numérica de Milímetros (0mm a 400mm)
+      // Marcação numérica de Milímetros (0mm a 3000mm)
       final textSpan = TextSpan(
         text: "${valorMM.toStringAsFixed(0)} mm",
         style: const TextStyle(color: Colors.white24, fontSize: 9, fontWeight: FontWeight.bold),

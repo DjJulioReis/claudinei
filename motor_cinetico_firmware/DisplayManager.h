@@ -87,15 +87,23 @@ public:
 
   void atualizarOLED() {
     static unsigned long lastDraw = 0;
+    static bool lastMotorMovendo = false;
 
-    // Se o motor estiver se movendo ou calibrando, reduz a frequência de atualização do OLED (1000ms) para liberar a CPU.
-    // Se o motor estiver parado, atualiza mais frequentemente (250ms) para o menu ficar responsivo.
+    // Se o motor estiver se movendo ou calibrando, nós NÃO escrevemos nada no OLED.
+    // Isso libera 100% da CPU e do barramento I2C para que os pulsos de passo ocorram sem nenhuma falha!
     double realPos = USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM);
     bool motorMovendo = (abs(motorController.targetPosMM - realPos) > POSITION_TOLERANCE_MM) || motorController.isHoming;
-    unsigned long intervalo = motorMovendo ? 1000 : 250;
 
-    if (millis() - lastDraw >= intervalo) {
+    if (motorMovendo) {
+      lastMotorMovendo = true;
+      return;
+    }
+
+    // Se o motor acabou de parar de se mover, ou se passaram os 250ms com o motor inativo:
+    if (lastMotorMovendo || (millis() - lastDraw >= 250)) {
       lastDraw = millis();
+      lastMotorMovendo = false;
+
       display.clearDisplay();
       display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
