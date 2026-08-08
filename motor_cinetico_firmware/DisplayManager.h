@@ -107,7 +107,9 @@ public:
       }
 
       display.setCursor(0, 32);
-      display.print("ALTURA REAL: "); display.print(encoder.getPositionMM(), 1); display.print(" mm");
+      display.print("ALTURA REAL: ");
+      display.print(USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM), 1);
+      display.print(" mm");
 
       display.setCursor(0, 48);
       if (faseAtual == FASE_ALTURA) display.print("> "); else display.print("  ");

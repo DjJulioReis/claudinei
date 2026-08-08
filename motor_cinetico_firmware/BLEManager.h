@@ -85,16 +85,20 @@ public:
     if (millis() - last >= 100) {
       last = millis();
       char buf[120];
+
+      double realPos = USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM);
+      long encCount = USAR_ENCODER ? encoder.getCount() : (long)((double)motorController.currentPosition / STEPS_PER_MM * (ENCODER_PULSES * QUADRATURE_FACTOR));
+
       // STATS:isCalibrated,isHoming,currentPosition,targetPosition,0,0,currentPosMM,targetPosMM,0,stepsDeviation,encoderCount
       sprintf(buf, "STATS:%d,%d,%d,%d,0,0,%.1f,%.1f,0,%d,%ld\n",
               motorController.isCalibrated ? 1 : 0,
               motorController.isHoming ? 1 : 0,
               motorController.currentPosition,
               (int)(motorController.targetPosMM * STEPS_PER_MM),
-              encoder.getPositionMM(),
+              realPos,
               motorController.targetPosMM,
-              motorController.currentPosition - (int)encoder.getCount(),
-              encoder.getCount());
+              USAR_ENCODER ? (motorController.currentPosition - (int)encoder.getCount()) : 0,
+              encCount);
       pTxCharacteristic->setValue(buf);
       pTxCharacteristic->notify();
     }

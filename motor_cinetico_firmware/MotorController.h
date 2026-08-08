@@ -39,7 +39,7 @@ public:
       currentPosition = 0;
       Serial.println("ℹ️ HOMING ABORTADO pelo usuário. Calibração forçada na posição atual.");
     }
-    targetPosMM = encoder.getPositionMM();
+    targetPosMM = USAR_ENCODER ? encoder.getPositionMM() : ((double)currentPosition / STEPS_PER_MM);
     currentSpeed = 0.0;
   }
 
@@ -67,8 +67,11 @@ public:
       return;
     }
 
+    // Calcula a posição real (seja pelo encoder físico ou pela posição teórica estimada por passos)
+    double realPosMM = USAR_ENCODER ? encoder.getPositionMM() : ((double)currentPosition / STEPS_PER_MM);
+
     // Calcula o erro em milímetros (Alvo - Real)
-    double errorMM = targetPosMM - encoder.getPositionMM();
+    double errorMM = targetPosMM - realPosMM;
     double errorAbs = abs(errorMM);
 
     // Se estiver dentro da tolerância de posicionamento industrial, para o motor
@@ -156,6 +159,7 @@ public:
 
   // Monitor de segurança para perda de passos
   void monitorSafety() {
+    if (!USAR_ENCODER) return; // Se não usar encoder, ignora monitoramento físico de segurança
     if (!isCalibrated || isHoming || encoder.encoderError) return;
 
     double encoderPosMM = encoder.getPositionMM();

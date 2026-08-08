@@ -14,6 +14,9 @@
 #define TX_UUID      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RX_UUID      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 
+// --- MODO DE OPERAÇÃO: ENCODER ---
+#define USAR_ENCODER  false // Defina como true para usar Malha Fechada (com encoder físico) ou false para Malha Aberta (ideal para testes de bancada sem o encoder óptico conectado)
+
 // --- PINOUT DO ESP32-C3 SUPER MINI ---
 #define STEP_PIN      0  // Sinal de Passo do Driver (TB6600)
 #define DIR_PIN       1  // Sinal de Direção do Driver (TB6600)
