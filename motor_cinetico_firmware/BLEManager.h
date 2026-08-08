@@ -134,6 +134,13 @@ public:
         // O valor enviado pelo aplicativo é em milímetros escalados por STEPS_PER_MM
         double alvoMM = (double)iv / STEPS_PER_MM;
         motorController.targetPosMM = constclampedMM(alvoMM);
+
+        // Se o usuário ajustar a posição manualmente pelo aplicativo, cancela o homing e assume calibração
+        if (motorController.isHoming) {
+          motorController.isHoming = false;
+          motorController.isCalibrated = true;
+          Serial.println("ℹ️ HOMING CANCELADO por comando SET_POS do aplicativo.");
+        }
       }
     }
     else if (cmd == "CALIBRAR") {

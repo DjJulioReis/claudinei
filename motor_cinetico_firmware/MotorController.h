@@ -30,6 +30,15 @@ public:
   }
 
   void stop() {
+    if (isHoming) {
+      isHoming = false;
+      isCalibrated = true;
+      noInterrupts();
+      encoder.encoderCount = 0;
+      interrupts();
+      currentPosition = 0;
+      Serial.println("ℹ️ HOMING ABORTADO pelo usuário. Calibração forçada na posição atual.");
+    }
     targetPosMM = encoder.getPositionMM();
     currentSpeed = 0.0;
   }

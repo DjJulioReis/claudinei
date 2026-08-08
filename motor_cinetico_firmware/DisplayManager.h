@@ -57,6 +57,13 @@ public:
           alvo = max(0.0, alvo - 5.0);
         }
         motorController.targetPosMM = alvo;
+
+        // Se o usuário ajustar a altura pelo knob físico, cancela o homing e assume calibração
+        if (motorController.isHoming) {
+          motorController.isHoming = false;
+          motorController.isCalibrated = true;
+          Serial.println("ℹ️ HOMING CANCELADO pelo knob giratório físico.");
+        }
       }
     }
     lastClkState = currentClkState;
