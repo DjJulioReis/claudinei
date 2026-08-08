@@ -29,6 +29,7 @@ public:
     lastClkState = digitalRead(ENC_CLK);
 
     Wire.begin(8, 9);
+    Wire.setClock(400000); // Configura o barramento I2C em 400kHz (Fast Mode) para reduzir tempo de bloqueio
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
       Serial.println("OLED ERR");
     }
@@ -86,7 +87,14 @@ public:
 
   void atualizarOLED() {
     static unsigned long lastDraw = 0;
-    if (millis() - lastDraw >= 200) {
+
+    // Se o motor estiver se movendo ou calibrando, reduz a frequência de atualização do OLED (1000ms) para liberar a CPU.
+    // Se o motor estiver parado, atualiza mais frequentemente (250ms) para o menu ficar responsivo.
+    double realPos = USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM);
+    bool motorMovendo = (abs(motorController.targetPosMM - realPos) > POSITION_TOLERANCE_MM) || motorController.isHoming;
+    unsigned long intervalo = motorMovendo ? 1000 : 250;
+
+    if (millis() - lastDraw >= intervalo) {
       lastDraw = millis();
       display.clearDisplay();
       display.setTextSize(1);
