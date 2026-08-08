@@ -82,11 +82,17 @@ public:
 
   void enviarEstatisticasBT() {
     static unsigned long last = 0;
-    if (millis() - last >= 100) {
+
+    // Se o motor estiver se movendo ou calibrando, atualiza as estatísticas BT a cada 350ms para não engasgar o motor.
+    // Se o motor estiver parado, atualiza a cada 150ms para manter o aplicativo super ágil.
+    double realPos = USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM);
+    bool motorMovendo = (abs(motorController.targetPosMM - realPos) > POSITION_TOLERANCE_MM) || motorController.isHoming;
+    unsigned long intervalo = motorMovendo ? 350 : 150;
+
+    if (millis() - last >= intervalo) {
       last = millis();
       char buf[120];
 
-      double realPos = USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM);
       long encCount = USAR_ENCODER ? encoder.getCount() : (long)((double)motorController.currentPosition / STEPS_PER_MM * (ENCODER_PULSES * QUADRATURE_FACTOR));
 
       // STATS:isCalibrated,isHoming,currentPosition,targetPosition,0,0,currentPosMM,targetPosMM,0,stepsDeviation,encoderCount
