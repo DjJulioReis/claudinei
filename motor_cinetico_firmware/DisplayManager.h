@@ -105,31 +105,47 @@ public:
       lastMotorMovendo = false;
 
       display.clearDisplay();
-      display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
-      display.setCursor(0, 0);
-      display.print("--- GUINCHO KINETIC ---");
 
-      display.setCursor(0, 16);
-      if (faseAtual == FASE_DMX) display.print("> "); else display.print("  ");
-      display.print("DMX CH: "); display.print(prefManager.dmxAddress);
+      // --- Linha 1: Cabeçalho Premium Minimalista ---
+      display.setTextSize(1);
+      display.setCursor(20, 0);
+      display.print("MILETO KINETIC");
 
-      // Diagnóstico do Encoder Óptico no OLED
-      display.setCursor(72, 16);
+      // Linha decorativa horizontal fina de divisão
+      display.drawFastHLine(0, 10, LARGURA_TELA, WHITE);
+
+      // Se houver algum erro de sincronismo, exibir alerta destacado
       if (encoder.encoderError) {
-        display.print("ERR ENC!");
+        display.fillRect(0, 14, LARGURA_TELA, 14, WHITE);
+        display.setTextColor(SSD1306_BLACK);
+        display.setCursor(14, 17);
+        display.print("ERRO DE ENCODER!");
+        display.setTextColor(SSD1306_WHITE);
       } else {
-        display.print("E:"); display.print(encoder.getCount());
+        // --- Linha 2: Configuração DMX ---
+        display.setCursor(0, 16);
+        if (faseAtual == FASE_DMX) display.print("> "); else display.print("  ");
+        display.print("DMX Canal: "); display.print(prefManager.dmxAddress);
       }
 
-      display.setCursor(0, 32);
-      display.print("ALTURA REAL: ");
-      display.print(USAR_ENCODER ? encoder.getPositionMM() : ((double)motorController.currentPosition / STEPS_PER_MM), 1);
-      display.print(" mm");
+      // Converte milímetros (mm) para centímetros (cm) dividindo por 10.0
+      double realCM = realPos / 10.0;
+      double alvoCM = motorController.targetPosMM / 10.0;
 
+      // --- Linha 3: Altura Real em cm ---
+      display.setCursor(0, 32);
+      display.print("  REAL: ");
+      display.print(realCM, 1);
+      display.print(" cm");
+
+      // --- Linha 4: Altura Alvo em cm ---
       display.setCursor(0, 48);
       if (faseAtual == FASE_ALTURA) display.print("> "); else display.print("  ");
-      display.print("ALTURA ALVO: "); display.print(motorController.targetPosMM, 1); display.print(" mm");
+      display.print("ALVO: ");
+      display.print(alvoCM, 1);
+      display.print(" cm");
+
       display.display();
     }
   }
