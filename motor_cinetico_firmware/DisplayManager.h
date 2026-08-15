@@ -45,26 +45,29 @@ public:
     int currentClkState = digitalRead(ENC_CLK);
     if (currentClkState != lastClkState && currentClkState == LOW) {
       bool subindo = digitalRead(ENC_DT) != currentClkState;
+
+      // Cancelar homing em qualquer giro do encoder
+      if (motorController.isHoming) {
+        motorController.isHoming = false;
+        motorController.isCalibrated = true;
+        Serial.println("ℹ️ HOMING CANCELADO por rotação do encoder knob.");
+      }
+
       if (faseAtual == FASE_DMX) {
         int dmx = prefManager.dmxAddress;
         if (subindo) { dmx++; if (dmx > 512) dmx = 1; }
         else { dmx--; if (dmx < 1) dmx = 512; }
         prefManager.dmxAddress = dmx;
+        Serial.print("🎛️ Novo Canal DMX: "); Serial.println(dmx);
       } else {
         double alvo = motorController.targetPosMM;
         if (subindo) {
-          alvo = min(MAX_ALTURA_CABO_MM, alvo + 5.0);
+          alvo = min(MAX_ALTURA_CABO_MM, alvo + 10.0); // Passos de 1cm por estalo
         } else {
-          alvo = max(0.0, alvo - 5.0);
+          alvo = max(0.0, alvo - 10.0);
         }
         motorController.targetPosMM = alvo;
-
-        // Se o usuário ajustar a altura pelo knob físico, cancela o homing e assume calibração
-        if (motorController.isHoming) {
-          motorController.isHoming = false;
-          motorController.isCalibrated = true;
-          Serial.println("ℹ️ HOMING CANCELADO pelo knob giratório físico.");
-        }
+        Serial.print("📐 Nova Altura Alvo: "); Serial.print(alvo / 10.0); Serial.println(" cm");
       }
     }
     lastClkState = currentClkState;
@@ -74,11 +77,19 @@ public:
     if (currentSwState != lastSwState && currentSwState == LOW) {
       if (millis() - ultimoDebounce >= 250) {
         ultimoDebounce = millis();
+
+        if (motorController.isHoming) {
+          motorController.isHoming = false;
+          motorController.isCalibrated = true;
+        }
+
         if (faseAtual == FASE_DMX) {
           faseAtual = FASE_ALTURA;
+          Serial.println("🔘 Modo alterado para: AJUSTE DE ALTURA");
         } else {
           faseAtual = FASE_DMX;
           prefManager.saveDMX(prefManager.dmxAddress);
+          Serial.println("🔘 Modo alterado para: AJUSTE DE DMX (Salvo)");
         }
       }
     }
